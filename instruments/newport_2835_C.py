@@ -1,6 +1,6 @@
 from pyvisa.errors import VisaIOError
 from time import sleep
-from enum import IntEnum, StrEnum
+from enum import Enum, StrEnum
 
 from dazzle_project.instruments.equipment import Equipment
 from dazzle_project.instruments.pro8000 import PRO_8000
@@ -18,12 +18,12 @@ class NEWPORT_2835_C(Equipment):
         PULSESINGLE = "SNGLPULSE"
         CONTPULSE   = "CONTPULSE"
 
-    class Channel(IntEnum):
+    class Channel(StrEnum):
         """Enumerator for Channel Selection."""
-        CHANNELA = 0
-        CHANNELB = 1
+        CHANNELA = "A"
+        CHANNELB = "B"
 
-    class Range(IntEnum):
+    class Range(Enum):
         """Enumerator for Range Mode."""
         MANUAL = 0
         AUTO = 1
@@ -36,25 +36,25 @@ class NEWPORT_2835_C(Equipment):
     # ------------
     #   DETECTOR
     # ------------
-    def get_detector(self):
-        result = self.query("DETMODEL_n?")
+    def get_detector(self, channel : Channel):
+        result = self.query(f"DETMODEL_{channel.value}?")
         return result
 
     # ------------
     #   MEASURE
     # ------------
-    def get_units(self):
-        self.write("UNITS_n?")
+    def get_units(self, channel : Channel):
+        self.write(f"UNITS_{channel.value}?")
         sleep(1)
         self.read()
-    def set_wavelength(self, wavelength : int):
-        self.write("LAMBDA_n {}".format(wavelength))
-    def get_wavelength(self):
-        self.query("LAMBDA_n?")
-    def set_mode(self, mode : MODE):
-        self.write("MODE_n {}".format(mode.value))
-    def get_mode(self):
-        result = self.query("MODE_n?")[:-1]
+    def set_wavelength(self, channel: Channel, wavelength : int):
+        self.write("LAMBDA_{} {}".format(channel.value, wavelength))
+    def get_wavelength(self, channel : Channel):
+        self.query(f"LAMBDA_{channel.value}?")
+    def set_mode(self, channel : Channel, mode : MODE):
+        self.write("MODE_{} {}".format(channel.value, mode.value))
+    def get_mode(self, channel : Channel):
+        result = self.query(f"MODE_{channel.value}?")[:-1]
         return self.MODE(result)
 
     # ------
@@ -67,23 +67,23 @@ class NEWPORT_2835_C(Equipment):
             raise ValueError("value must be between 1 and 100")
         self.write("STSIZE_n {}".format(value))
 
-    def get_stat_mean(self):
-        result = self.query("STMEAN_n?")
+    def get_stat_mean(self, channel : Channel):
+        result = self.query(f"STMEAN_{channel.value}?")
         return result
 
-    def get_auto_range(self):
-        result = self.query("AUTO_n?")
+    def get_auto_range(self, channel : Channel):
+        result = self.query(f"AUTO_{channel.value}?")
         return result
 
-    def set_auto_range(self, range_val : Range):
+    def set_auto_range(self, channel : Channel):
         """Set automatic range."""
-        self.write("AUTO_n")
+        self.write(f"AUTO_{channel.value}")
 
-    def start_channel_acquisition(self):
-        self.write("RUN_n")
+    def start_channel_acquisition(self, channel : Channel):
+        self.write(f"RUN_{channel.value}")
 
-    def read_single_channel(self):
-        self.write("R_n?")
+    def read_single_channel(self, channel : Channel):
+        return float(self.query(f"R_{channel.value}?"))
 
     def stop(self):
         self.write("STOP")
@@ -102,6 +102,6 @@ if __name__ == "__main__" :
     print(rm.list_resources())
 
     print("test")
-    powermeter = rm.open_resource("GPIB0::6::INSTR")
-    pm = ThorlabsPM100(inst=powermeter)
+    powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
+    # pm = ThorlabsPM100(inst=powermeter)
     print("test2")
