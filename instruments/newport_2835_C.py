@@ -4,10 +4,11 @@ from enum import IntEnum, StrEnum
 
 from dazzle_project.instruments.equipment import Equipment
 from dazzle_project.instruments.pro8000 import PRO_8000
+import ThorlabsPM100
 
 
 
-class NEWPORT_2835_R(Equipment):
+class NEWPORT_2835_C(Equipment):
 
     class MODE(StrEnum):
         DCSINGLE    = "DCSNGL"
@@ -96,12 +97,11 @@ class NEWPORT_2835_R(Equipment):
 
 if __name__ == "__main__" :
     import pyvisa
-
+    from ThorlabsPM100 import ThorlabsPM100
     rm = pyvisa.ResourceManager()
     print(rm.list_resources())
 
-    pro8000 = PRO_8000("GPIB0::10::INSTR")
-    powermeter = NEWPORT_2835_R("GPIB0::6::INSTR")
-
-
     print("test")
+    powermeter = rm.open_resource("GPIB0::6::INSTR")
+    pm = ThorlabsPM100(inst=powermeter)
+    print("test2")

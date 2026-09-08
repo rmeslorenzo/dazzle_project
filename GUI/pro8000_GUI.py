@@ -9,8 +9,11 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 import time
-import random
 from enum import Enum
+# import CSV
+import statistics
+import csv
+import datetime
 
 from dazzle_project.GUI.Instrument_GUI import InstrumentWidget
 from dazzle_project.instruments.pro8000 import PRO_8000
@@ -179,11 +182,11 @@ class MeasurementWorker(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def read_diode_current(self):
-        print(f"current channel is {self.instrument.current_slot}")
+        # print(f"current channel is {self.instrument.current_slot}")
         if self.instrument.current_slot == self.instrument.Slot.SLOT6:
-            print("read diode current")
+            # print("read diode current")
             value = self.instrument.read_diode_current_slot6()
-            print(f"diode current : {value}")
+            # print(f"diode current : {value}")
             self.read_diode_current_ready.emit(value)
 
     @QtCore.pyqtSlot()
@@ -210,22 +213,22 @@ class MeasurementWorker(QtCore.QObject):
         current_slot = self.next_slot
 
         try :
-            print("autoread")
+            # print("autoread")
             if self.next_slot == self.instrument.Slot.SLOT1:
-                print("readin tec")
+                # print("readin tec")
                 self.read_all_tec()
-                self.instrument.update_temperature_plot()
+                # self.instrument.update_temperature_plot()
 
                 self.next_slot = self.instrument.Slot.SLOT6
 
             elif self.next_slot == self.instrument.Slot.SLOT6:
-                print("readin ld")
+                # print("readin ld")
                 self.read_all_ld()
 
                 self.next_slot = self.instrument.Slot.SLOT1
 
             else:
-                print("reading nothing")
+                # print("reading nothing")
                 self.next_slot = self.instrument.Slot.SLOT1
 
         except Exception as e:
@@ -798,6 +801,8 @@ class PRO8000_GUI(InstrumentWidget):
         self.comboBox_4.addItems([p.value for p in self.instrument.Polarity])
         self.comboBox_2.addItems([c.value for c in self.instrument.Calibration])
 
+        self.pushButton_13.clicked.connect(self.measure_current_sweep)
+
         # --------------------------------
         #    WIDGET Modifications
         # -------------------------------
@@ -1005,7 +1010,6 @@ class PRO8000_GUI(InstrumentWidget):
         # ---------------------------
         # PYQTGPRAPH Functions
         # --------------------------
-
     MAX_TIME = 600
 
     def update_temperature_plot(self):
@@ -1025,6 +1029,114 @@ class PRO8000_GUI(InstrumentWidget):
 
         # Update graph
         self.curve.setData(self.time, self.temp)
+
+
+    # ------------------------------------
+    #     Quick measurement functions
+    # ------------------------------------
+    def measure_current_sweep(self):
+
+        print("Measurement sweep activated")
+        start = self.doubleSpinBox_11.value()
+        stop = self.doubleSpinBox_12.value()
+        npoints = int(self.doubleSpinBox_13.value())
+
+        sweep = ParameterSweep({
+            "current": (start, stop, npoints),
+        })
+        # sweep = ParameterSweep(start, stop, npoints)
+
+        filename = (
+            f"ld_sweep_"
+            f"{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
+        )
+
+        with open(filename, "w", newline="") as f:
+            writer = csv.writer(f)
+
+            writer.writerow([
+                "ld_current_A",
+                "temperature_avg_degC",
+                "temperature_std_degC",
+                "power_avg_mW",
+                "power_std_mW"
+            ])
+
+            #
+            # Go to LD channel
+            #
+            self.instrument.select_slot(
+                self.instrument.Slot.SLOT6
+            )
+
+            N_MEASUREMENTS = 10
+
+            for sw in sweep:
+                print(f"Setting current {sw["current"]:.4f} A")
+
+                #
+                # Apply current
+                #
+                self.instrument.set_diode_current(sw["current"])
+
+                #
+                # Wait for settling
+                #
+                QtWidgets.QApplication.processEvents()
+                time.sleep(0.5)
+
+                temperatures = []
+                powers = []
+                for i in range(N_MEASUREMENTS):
+                    #
+                    # Read temperature
+                    #
+                    self.instrument.select_slot(
+                        self.instrument.Slot.SLOT1
+                    )
+
+                    temperature = (
+                        self.instrument.read_temperature_slot1()
+                    )
+                    print(f"temperature is : {temperature}")
+
+                    temperatures.append(temperature)
+                    #
+                    # Dummy power reading
+                    #
+                    power = -1.0
+                    powers.append(power)
+
+                temp_avg = statistics.mean(temperatures)
+                temp_std = statistics.stdev(temperatures) \
+                    if len(temperatures) > 1 else 0.0
+                power_avg = statistics.mean(powers)
+                power_std = statistics.stdev(powers) \
+                    if len(powers) > 1 else 0.0
+                #
+                # Save
+                #
+                writer.writerow([
+                    sw["current"],
+                    temp_avg,
+                    temp_std,
+                    power_avg,
+                    power_std
+                ])
+                print(
+                    f"I={sw["current"]:.4f}A "
+                    f"T={temp_avg:.3f}+-{temp_std:.3f} °C "
+                    f"P={power_avg:.3f}+-{power_std:.3f} mW"
+                )
+
+                #
+                # Return to LD channel
+                #
+                self.instrument.select_slot(
+                    self.instrument.Slot.SLOT6
+                )
+
+        print(f"Sweep saved to {filename}")
 
     # ----------------
     #   END CUSTOM
@@ -1103,7 +1215,7 @@ if __name__ == "__main__":
     import pyvisa
     from dazzle_project.instruments.pro8000 import DummyPro8000, PRO_8000
 
-    dummy_enabled = True
+    dummy_enabled = False
     if dummy_enabled:
         pro8000 = DummyPro8000()
     else :

@@ -41,8 +41,9 @@ class Equipment(ABC):
         self.manufacturer = manufacturer
         self.serial_number = serial_number
         self.name = "equipment"
+        self.timeout = 50000
         self.rm = visa_resource_manager or pyvisa.ResourceManager()
-        self.instrument = self.rm.open_resource(resource_name)
+        self.instrument = self.rm.open_resource(resource_name, timeout=self.timeout)
 
         self.id = None
         self.model = None
