@@ -423,7 +423,9 @@ class PRO_8000(Equipment):
         """Set the P parameter in the PID [in %]"""
         if not value < 100:
             raise ValueError("Slot must lower than 100.")
+        # self.set_i_share_off()
         self.write(":SHAREI:SET {}".format(value))
+        # self.set_i_share_on()
 
 
     def set_d_share(self, value: float):
@@ -434,24 +436,36 @@ class PRO_8000(Equipment):
 
     def read_p_share(self):
         try :
-            result = float(self.query(":SHAREP:SET?").strip(":SHAREP:SET ")[:-1])
+            print("query for pshare ", self.query(":SHAREP:SET?"))
+            out = self.query(":SHAREP:SET?")
+            if ":SHAREP:SET " in out:
+                result = float(out.strip(":SHAREP:SET ")[:-1])
+            else :
+                result = -1
             return result
-        except VisaIOError as e:
-            print(f"PID read failed: {e}")
+        except Exception as e:
+            print(f"Read P-Share read failed: {e}")
 
     def read_d_share(self):
         try :
-            result = float(self.query(":SHARED:SET?").strip(":SHARED:SET ")[:-1])
+            print("query for dshare ", self.query(":SHARED:SET?"))
+            sleep(0.1)
+            out = self.query(":SHARED:SET?")
+            if ":SHARED:SET " in out:
+                result = float(out.strip(":SHARED:SET ")[:-1])
+            else:
+                result = -1
             return result
-        except VisaIOError as e:
-            print(f"PID read failed: {e}")
+        except Exception as e:
+            print(f"Read Dshare read failed: {e}")
 
     def read_i_share(self):
         try :
-            result = float(self.query(":SHAREI:SET?").strip(":SHAREI:SET ")[:-1])
+            out = self.query(":SHAREI:SET?")
+            result = float(out.strip(":SHAREI:SET ")[:-1])
             return result
-        except VisaIOError as e:
-            print(f"PID read failed: {e}")
+        except Exception as e:
+            print(f"Read IShare read failed: {e}")
 
     def set_i_share_on(self):
         self.write(":INTEG ON")
