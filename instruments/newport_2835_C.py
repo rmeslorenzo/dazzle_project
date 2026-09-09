@@ -31,7 +31,7 @@ class NEWPORT_2835_C(Equipment):
     def __init__(self, resource_name, serial_number=None):
         super().__init__(resource_name, serial_number)
         self.current_channel=None
-        self.name = "NEWPORT_2835_R"
+        self.name = "NEWPORT_2835_C"
 
     # ------------
     #   DETECTOR
@@ -84,6 +84,9 @@ class NEWPORT_2835_C(Equipment):
 
     def read_single_channel(self, channel : Channel):
         return float(self.query(f"R_{channel.value}?"))
+
+    def read_single_channelB(self):
+        return self.read_single_channel(channel=self.Channel.CHANNELB)
 
     def stop(self):
         self.write("STOP")

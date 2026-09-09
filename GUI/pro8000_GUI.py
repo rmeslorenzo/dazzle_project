@@ -96,6 +96,13 @@ class MeasurementWorker(QtCore.QObject):
             p_value = self.instrument.read_p_share()
             d_value = self.instrument.read_d_share()
             i_value = self.instrument.read_i_share()
+            if p_value is None:
+                p_value = -1
+            if d_value is None:
+                d_value = -1
+            if i_value is None:
+                i_value = -1
+
             self.read_pid_settings_ready.emit(p_value, d_value, i_value)
 
     @QtCore.pyqtSlot()
@@ -355,6 +362,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.gridLayoutWidget.setObjectName("gridLayoutWidget")
         self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
         self.mainLayout.addWidget(self.gridLayoutWidget)
+
 
         # ------------------------
         #  Copy paste until here
@@ -827,12 +835,25 @@ class PRO8000_GUI(InstrumentWidget):
         self.doubleSpinBox_8.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_9.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_10.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_11.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_12.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
 
         self.doubleSpinBox.setValue(25)
+        #PID
+        self.doubleSpinBox_3.setSingleStep(0.1)
+        self.doubleSpinBox_4.setSingleStep(0.1)
+        self.doubleSpinBox_5.setSingleStep(0.1)
+
         self.doubleSpinBox_7.setValue(3930)
         self.doubleSpinBox_8.setValue(25)
         self.doubleSpinBox_9.setValue(10000)
         self.doubleSpinBox_10.setDecimals(4)
+
+        # Sweep
+        self.doubleSpinBox_11.setSingleStep(0.1)
+        self.doubleSpinBox_12.setSingleStep(0.1)
+        self.doubleSpinBox_11.setDecimals(3)
+        self.doubleSpinBox_12.setDecimals(3)
 
         # PYQTGRAPH : Measure TEC temp over time
         self.widget.setWindowTitle("Temperature vs Time")
@@ -1063,7 +1084,11 @@ class PRO8000_GUI(InstrumentWidget):
                 "Connection error",
                 f"Could not connect to instrument:\n\n{e}"
             )
-            power = -1
+
+        if not powermeter.connected:
+            powermeter = None
+
+        print(powermeter)
 
         sweep = ParameterSweep({
             "current": (start, stop, npoints),
@@ -1112,6 +1137,8 @@ class PRO8000_GUI(InstrumentWidget):
                 #
                 self.instrument.set_diode_current(sw["current"])
                 read_ld_current = self.instrument.read_diode_current_slot6()
+                # Update laser current in GUI
+                self.worker.read_diode_current_ready.emit(read_ld_current)
                 #
                 # Wait for settling
                 #
@@ -1134,8 +1161,14 @@ class PRO8000_GUI(InstrumentWidget):
                     temperature = (
                         self.instrument.read_temperature_slot1()
                     )
+
                     tec_current = ( self.instrument.read_tec_current_slot1())
                     tec_voltage = ( self.instrument.read_tec_voltage_slot1() )
+
+                    # update readouts
+                    self.worker.read_temperature_ready.emit(temperature)
+                    self.worker.read_itec_current_ready.emit(tec_current)
+                    self.worker.read_vte_voltage_ready.emit(tec_voltage)
 
                     print(f"temperature is : {temperature}")
 
@@ -1147,6 +1180,9 @@ class PRO8000_GUI(InstrumentWidget):
                     #
                     if powermeter is not None :
                         power = powermeter.read_single_channelB()
+                        powers.append(power)
+                    else :
+                        power = 0
                         powers.append(power)
 
 
@@ -1191,6 +1227,7 @@ class PRO8000_GUI(InstrumentWidget):
                 )
 
         self.toogle_ld(False)
+        self.activate_channel_tec(True)
 
         print(f"Sweep saved to {filename}")
 
