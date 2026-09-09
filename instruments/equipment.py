@@ -41,9 +41,16 @@ class Equipment(ABC):
         self.manufacturer = manufacturer
         self.serial_number = serial_number
         self.name = "equipment"
-        self.timeout = 50000
+        # self.timeout = 50000
         self.rm = visa_resource_manager or pyvisa.ResourceManager()
-        self.instrument = self.rm.open_resource(resource_name, timeout=self.timeout)
+        self.instrument = None
+        self.connected = False
+        try :
+            self.instrument = self.rm.open_resource(resource_name)
+            self.connected = True
+
+        except pyvisa.VisaIOError as e:
+            print(f"Could not open {resource_name}: {e}")
 
         self.id = None
         self.model = None
