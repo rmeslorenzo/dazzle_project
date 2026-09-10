@@ -18,6 +18,7 @@ import datetime
 from dazzle_project.GUI.Instrument_GUI import InstrumentWidget
 from dazzle_project.instruments.pro8000 import PRO_8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
+from dazzle_project.instruments.test_wrap_2936_R import Newport_2936R
 from dazzle_project.tools.ParameterSweep import ParameterSweep
 
 
@@ -167,7 +168,7 @@ class MeasurementWorker(QtCore.QObject):
         # self.instrument.update_temperature_plot()
         self.read_itec_current()
         self.read_vte_voltage()
-        self.read_pid_settings()
+        # self.read_pid_settings()
 
 
     # DIODE
@@ -1074,9 +1075,25 @@ class PRO8000_GUI(InstrumentWidget):
         npoints = int(self.doubleSpinBox_13.value())
 
         powermeter = None
+        powermeter_model = False # if true your using the 2835 otherwise it is the 2936
+        print("instantiate powermeter")
         try:
-            powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
-            sleep(2)
+            # powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
+            if powermeter_model:
+                powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
+                model = "newport_2836_C"
+                sleep(2)
+                # channel A selection
+                powermeter.set_wavelength(530, powermeter.Channel.CHANNELB)
+                # powermeter.set_wavelength(530, channel=powermeter.Channel.CHANNELB)
+            else :
+                powermeter = Newport_2936R()
+                model = "newport_2936R"
+                sleep(2)
+                # channel A selection
+                powermeter.write("PM:CHAN 2")
+                powermeter.set_wavelength(530)
+                # powermeter.set_wavelength(530, channel=powermeter.Channel.CHANNELB)
         except Exception as e:
 
             QtWidgets.QMessageBox.critical(
@@ -1096,7 +1113,7 @@ class PRO8000_GUI(InstrumentWidget):
         # sweep = ParameterSweep(start, stop, npoints)
 
         filename = (
-            f"ld_sweep_"
+            f"ld_sweep_{model}_"
             f"{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
         )
 
@@ -1104,6 +1121,7 @@ class PRO8000_GUI(InstrumentWidget):
             writer = csv.writer(f)
 
             writer.writerow([
+                "Model",
                 "set_ld_current_A",
                 "read_current_A",
                 "temperature_avg_degC",
@@ -1144,7 +1162,7 @@ class PRO8000_GUI(InstrumentWidget):
                 #
                 QtWidgets.QApplication.processEvents()
                 time.sleep(WAIT)
-
+                model = ""
                 temperatures = []
                 powers = []
                 tec_currents = []
@@ -1179,7 +1197,14 @@ class PRO8000_GUI(InstrumentWidget):
                     # Dummy power reading
                     #
                     if powermeter is not None :
-                        power = powermeter.read_single_channelB()
+                        if isinstance(powermeter, NEWPORT_2835_C):
+                            power = powermeter.read_single_power()
+                            model="newport_2835C"
+
+                        elif isinstance(powermeter, Newport_2936R):
+                            power = powermeter.read_single_power()
+                            print(f"Model : {model}, power : {power}")
+                            model = "newport_2936R"
                         powers.append(power)
                     else :
                         power = 0
@@ -1202,6 +1227,7 @@ class PRO8000_GUI(InstrumentWidget):
                 # Save
                 #
                 writer.writerow([
+                    model,
                     sw["current"],
                     read_ld_current,
                     temp_avg,
@@ -1216,7 +1242,7 @@ class PRO8000_GUI(InstrumentWidget):
                 print(
                     f"I={sw["current"]:.4f}A "
                     f"T={temp_avg:.3f}+-{temp_std:.3f} °C "
-                    f"P={power_avg:.3f}+-{power_std:.3f} mW"
+                    f"P={power_avg:.3f}+-{power_std:.3f} W"
                 )
 
                 #

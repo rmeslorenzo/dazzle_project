@@ -1,7 +1,8 @@
 from ximea import xiapi
 
 # -----------------
-# Link : https://www.ximea.com/products/usb-vision-industrial/xiq-usb3-compact-cmos-cameras/e2v-ev76c560-spartan-7-usb3-mono-board-level-camera
+# Link       : https://www.ximea.com/products/usb-vision-industrial/xiq-usb3-compact-cmos-cameras/e2v-ev76c560-spartan-7-usb3-mono-board-level-camera
+# Manual     : https://www.ximea.com/support/wiki/apis/XiAPI_Python_Manual
 # Model      : E76C560
 # Resolution : 1280 X 1024
 # Readout    : Global Shutter

@@ -1,5 +1,7 @@
 from abc import ABC
 import pyvisa
+from threading import Lock
+from time import sleep
 
 class DummyEquipment():
 
@@ -41,7 +43,7 @@ class Equipment(ABC):
         self.manufacturer = manufacturer
         self.serial_number = serial_number
         self.name = "equipment"
-        # self.timeout = 50000
+        # self._lock = Lock()
         self.rm = visa_resource_manager or pyvisa.ResourceManager()
         self.instrument = None
         self.connected = False
@@ -82,6 +84,7 @@ class Equipment(ABC):
         return self.instrument.read()
 
     def query(self, command):
+        sleep(0.1)
         return self.instrument.query(command)
 
     def close(self):

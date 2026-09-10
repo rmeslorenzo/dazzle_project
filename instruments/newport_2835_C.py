@@ -85,7 +85,7 @@ class NEWPORT_2835_C(Equipment):
     def read_single_channel(self, channel : Channel):
         return float(self.query(f"R_{channel.value}?"))
 
-    def read_single_channelB(self):
+    def read_single_power(self):
         return self.read_single_channel(channel=self.Channel.CHANNELB)
 
     def stop(self):

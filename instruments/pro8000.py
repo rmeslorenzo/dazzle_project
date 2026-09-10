@@ -152,7 +152,6 @@ class PRO_8000(Equipment):
         self.current_slot = current_slot
         self.current_calibration = None
         self.current_sensor = current_sensor
-        self._lock = threading.Lock()
         self.name = "PRO8000"
 
     class Sensor(StrEnum):
@@ -209,10 +208,9 @@ class PRO_8000(Equipment):
 
     def read_tec_current(self, slot : Slot):
         """Read the TEC current temperature."""
-        with self._lock:
-            self.write(":ITE:MEAS {}".format(slot.value))
-            TEC_current = self.query(":ITE:ACT?")
-            return float(TEC_current.strip(":ITE:ACT "))
+        self.write(":ITE:MEAS {}".format(slot.value))
+        TEC_current = self.query(":ITE:ACT?")
+        return float(TEC_current.strip(":ITE:ACT "))
 
     def read_tec_current_slot1(self):
 
@@ -437,37 +435,35 @@ class PRO_8000(Equipment):
 
     def read_p_share(self):
         try :
-            with self._lock:
-                print("query for pshare ", self.query(":SHAREP:SET?"))
-                out = self.query(":SHAREP:SET?")
-                if ":SHAREP:SET " in out:
-                    result = float(out.strip(":SHAREP:SET ")[:-1])
-                else :
-                    result = -1
-                return result
+
+            print("query for pshare ", self.query(":SHAREP:SET?"))
+            out = self.query(":SHAREP:SET?")
+            if ":SHAREP:SET " in out:
+                result = float(out.strip(":SHAREP:SET ")[:-1])
+            else :
+                result = -1
+            return result
         except Exception as e:
             print(f"Read P-Share read failed: {e}")
 
     def read_d_share(self):
         try :
-            with self._lock:
-                print("query for dshare ", self.query(":SHARED:SET?"))
-                sleep(0.1)
-                out = self.query(":SHARED:SET?")
-                if ":SHARED:SET " in out:
-                    result = float(out.strip(":SHARED:SET ")[:-1])
-                else:
-                    result = -1
-                return result
+            print("query for dshare ", self.query(":SHARED:SET?"))
+            sleep(0.1)
+            out = self.query(":SHARED:SET?")
+            if ":SHARED:SET " in out:
+                result = float(out.strip(":SHARED:SET ")[:-1])
+            else:
+                result = -1
+            return result
         except Exception as e:
             print(f"Read Dshare read failed: {e}")
 
     def read_i_share(self):
         try :
-            with self._lock:
-                out = self.query(":SHAREI:SET?")
-                result = float(out.strip(":SHAREI:SET ")[:-1])
-                return result
+            out = self.query(":SHAREI:SET?")
+            result = float(out.strip(":SHAREI:SET ")[:-1])
+            return result
         except Exception as e:
             print(f"Read IShare read failed: {e}")
 
@@ -487,9 +483,6 @@ if __name__ == "__main__" :
 
     pro8000 = PRO_8000("GPIB0::10::INSTR")
 
-    pro8000.query_id()
-
-    pro8000.query(":CALTR:SET?")
-    pro8000.read_tec_voltage_slot1()
+    print(pro8000.query_id())
 
     print("test")

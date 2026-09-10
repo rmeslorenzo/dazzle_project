@@ -22,7 +22,7 @@ class Newport_2936R():
     def __init__(self, **kwargs):
         try:
             self.LIBNAME = kwargs.get(
-                'LIBNAME', r'C:\Program Files (x86)\Newport\Newport USB Driver\Bin\usbdll.dll')
+                'LIBNAME', r'C:\Program Files\Newport\Newport USB Driver\Bin\usbdll.dll')
             self.lib = windll.LoadLibrary(self.LIBNAME)
             self.product_id = kwargs.get('product_id', 0xCEC7)
         except WindowsError as e:
@@ -93,6 +93,7 @@ class Newport_2936R():
                 instrument_list = [arInstruments.value,
                                    arInstrumentsModel.value, arInstrumentsSN.value]
                 print('Arrays of Device Id\'s: Model number\'s: Serial Number\'s: ' + str(instrument_list))
+                self.connected = True
                 return instrument_list
         except CommandError as e:
             print(e)
@@ -134,7 +135,7 @@ class Newport_2936R():
         :param command_string: Name of the string to be sent. Check Manual for commands
         :raise CommandError:
         """
-        command = create_string_buffer(command_string)
+        command = create_string_buffer(command_string.encode("ascii"))
         length = c_ulong(sizeof(command))
         cdevice_id = c_long(self.device_id)
         status = self.lib.newp_usb_send_ascii(
@@ -147,6 +148,9 @@ class Newport_2936R():
                 pass
         except CommandError as e:
             print(e)
+
+    def read_single_power(self):
+        return float(self.ask("PM:P?"))
 
     def set_wavelength(self, wavelength):
         """
@@ -216,7 +220,7 @@ class Newport_2936R():
         """
         self.set_wavelength(wavelength)
         actualwavelength = self.ask('PM:Lambda?')
-        power = self.ask('PM:Power?')
+        power = self.ask('PM:P?')
         return [actualwavelength, power]
 
     def sweep(self, swave, ewave, interval, buff_size=1000, interval_ms=1):
@@ -298,6 +302,7 @@ class Newport_2936R():
 
 if __name__ == '__main__':
     # Procedure to use this driver
+    from time import sleep
 
     # Initialze a instrument object. You might have to change the LIBname or product_id.
     nd = Newport_2936R(
@@ -330,8 +335,22 @@ if __name__ == '__main__':
         # # opens a console
         # nd.console()
 
+        print(f"currently on channel {str(nd.ask("PM:CHAN?"))}")
+        sleep(0.2)
+
+        print("switching to channel A ....")
+        nd.write("PM:CHAN 1")
+        sleep(0.2)
+        nd.set_wavelength(530)
+
+
+        for i in range(25):
+            result = nd.ask("PM:P?")
+            print(f"measurement {i} : {float(result)}")
+            sleep(0.2)
+
         # Close the device
-        nd.close_device()
+        # nd.close_device()
 
     else:
         nd.status != 'Connected'
