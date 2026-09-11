@@ -153,6 +153,7 @@ class PRO_8000(Equipment):
         self.current_calibration = None
         self.current_sensor = current_sensor
         self.name = "PRO8000"
+        self.laser_enabled = False
 
     class Sensor(StrEnum):
         """Enumerator for temperature sensors for PRO8000."""
@@ -273,10 +274,24 @@ class PRO_8000(Equipment):
     def set_ld_on(self):
         if self.current_slot == self.Slot.SLOT6:
             self.write(":LASER ON")
+        else :
+            previous_slot = self.current_slot
+            self.select_slot(self.Slot.SLOT6)
+            self.write(":LASER ON")
+            self.select_slot(previous_slot)
+
+        self.laser_enabled = True
 
     def set_ld_off(self):
         if self.current_slot == self.Slot.SLOT6:
             self.write(":LASER OFF")
+        else :
+            previous_slot = self.current_slot
+            self.select_slot(self.Slot.SLOT6)
+            self.write(":LASER OFF")
+            self.select_slot(previous_slot)
+
+        self.laser_enabled = False
 
     def set_diode_current(self, ild : float):
         """Set the current diode current."""
