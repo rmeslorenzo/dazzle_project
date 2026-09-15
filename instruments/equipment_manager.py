@@ -1,7 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import pyvisa
 
+from dazzle_project.instruments.equipment import Equipment
+from dazzle_project.instruments import get_instrument_class
 
 @dataclass
 class InstrumentInfo:
@@ -12,6 +14,7 @@ class InstrumentInfo:
     firmware: Optional[str] = None
     identification: Optional[str] = None
     instrument_type: Optional[str] = None
+    instrument_class: Optional[Equipment|None] = None
 
 
 class EquipmentManager:
@@ -70,7 +73,7 @@ class EquipmentManager:
                     info.serial_number = parts[2]
                     info.firmware = parts[3]
 
-                info.instrument_type = self._guess_type(
+                info.instrument_type, info.instrument_class = self._guess_type(
                     info.manufacturer,
                     info.model
                 )
@@ -109,36 +112,43 @@ class EquipmentManager:
         self,
         manufacturer: Optional[str],
         model: Optional[str]
-    ) -> str:
+    ) -> tuple[str, Equipment|None]:
 
         text = f"{manufacturer or ''} {model or ''}".lower()
 
         keywords = {
-            "oscilloscope": [
-                "dso", "mso", "scope", "oscilloscope"
+            # "oscilloscope": {
+            #     "dso", "mso", "scope", "oscilloscope"
+            # },
+            "laser driver" : [
+                  "pro8000"
             ],
-            "multimeter": [
-                "dmm", "344", "multimeter"
+            "powermeter"   : [
+                "2835-c"
             ],
-            "power supply": [
-                "e36", "n57", "supply", "psu"
-            ],
-            "function generator": [
-                "awg", "afg", "generator"
-            ],
-            "spectrum analyzer": [
-                "spectrum", "analyzer", "fsv", "n90"
-            ],
-            "network analyzer": [
-                "vna", "network analyzer", "e507", "znb"
-            ]
+            # "multimeter": {
+            #     "dmm", "344", "multimeter"
+            # },
+            # "power supply": {
+            #     "e36", "n57", "supply", "psu"
+            # },
+            # "function generator": {
+            #     "awg", "afg", "generator"
+            # },
+            # "spectrum analyzer": {
+            #     "spectrum", "analyzer", "fsv", "n90"
+            # },
+            # "network analyzer": {
+            #     "vna", "network analyzer", "e507", "znb"
+            # }
         }
 
-        for instrument_type, words in keywords.items():
-            if any(word in text for word in words):
-                return instrument_type
-
-        return "unknown"
+        for instrument_type, instrument_list in keywords.items():
+            for inst in instrument_list:
+                if inst in text:
+                    equipment_class = get_instrument_class(inst)
+                    return instrument_type, equipment_class
+        return "unknown", None
 
     def list_instruments(self) -> List[InstrumentInfo]:
         return list(self.instruments.values())
@@ -171,7 +181,10 @@ if __name__ == "__main__":
             print(f"Serial        : {inst.serial_number}")
             print(f"Firmware      : {inst.firmware}")
             print(f"Type          : {inst.instrument_type}")
+            print(f"Class         : {inst.instrument_class}")
             print(f"Identification: {inst.identification}")
 
     finally:
         manager.close()
+
+    print("test")

@@ -1,19 +1,23 @@
 from PyQt6 import QtWidgets
 import pyvisa
 
+from dazzle_project.instruments.equipment_manager import EquipmentManager
 from dazzle_project.instruments.pro8000 import PRO_8000, DummyPro8000
+from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
 from dazzle_project.GUI.pro8000_GUI import PRO8000_GUI
 
 
 class MainGUI(QtWidgets.QMainWindow):
 
-    def __init__(self):
+    def __init__(self, dummy_mode = False):
         super().__init__()
 
+        self.dummy_mode = dummy_mode
         self.setWindowTitle("Dazzle Instrument Control")
         self.resize(1200, 800)
 
         # Keep track of connected instruments
+        self.manager = EquipmentManager()
         self.instruments = []
 
         # =================================================
@@ -148,7 +152,7 @@ class MainGUI(QtWidgets.QMainWindow):
 
         self.instrument_type.addItems([
             "PRO8000",
-            "PowerMeter",
+            "2835-C",
         ])
 
         connection_layout.addWidget(
@@ -159,6 +163,9 @@ class MainGUI(QtWidgets.QMainWindow):
         self.connect_button = QtWidgets.QPushButton(
             "Connect"
         )
+        self.autscan_button = QtWidgets.QPushButton(
+            "Auto-Scan"
+        )
 
         self.connect_button.clicked.connect(
             self.connect_instrument
@@ -166,6 +173,9 @@ class MainGUI(QtWidgets.QMainWindow):
 
         connection_layout.addWidget(
             self.connect_button
+        )
+        connection_layout.addWidget(
+            self.autscan_button
         )
 
         layout.addLayout(connection_layout)
@@ -178,6 +188,7 @@ class MainGUI(QtWidgets.QMainWindow):
     # =====================================================
 
     def connect_instrument(self):
+
 
         connection_type = self.connection_type.currentText()
         address = self.address.value()
@@ -293,7 +304,8 @@ class MainGUI(QtWidgets.QMainWindow):
         if instrument_type == "PRO8000":
 
             # Temporary during development
-            return DummyPro8000()
+            if self.dummy_mode:
+                return DummyPro8000()
 
             # Real implementation later:
             #
@@ -426,7 +438,7 @@ if __name__ == "__main__":
 
     app = QtWidgets.QApplication(sys.argv)
 
-    window = MainGUI()
+    window = MainGUI(dummy_mode=True)
     window.show()
 
     sys.exit(app.exec())
