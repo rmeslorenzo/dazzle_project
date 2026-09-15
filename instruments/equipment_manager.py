@@ -8,6 +8,8 @@ from dazzle_project.instruments import get_instrument_class
 @dataclass
 class InstrumentInfo:
     resource_name: str
+    connection_type : Optional[str] = None
+    address : Optional[int] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
     serial_number: Optional[str] = None
@@ -53,6 +55,7 @@ class EquipmentManager:
 
         instrument = self.rm.open_resource(resource_name)
 
+
         try:
             instrument.timeout = 2000
 
@@ -67,6 +70,11 @@ class EquipmentManager:
                     identification=idn
                 )
 
+                # Check the address and connection type
+                resource_info =  [rm for rm in resource_name.split(":") if rm.strip()]
+                if "GPIB" in resource_info[0]:
+                    info.connection_type = "GPIB"
+                info.address = int(resource_info[1])
                 if len(parts) >= 4:
                     info.manufacturer = parts[0]
                     info.model = parts[1]
@@ -176,6 +184,8 @@ if __name__ == "__main__":
         for inst in manager.list_instruments():
             print("=" * 80)
             print(f"Resource      : {inst.resource_name}")
+            print(f"connection    : {inst.connection_type}")
+            print(f"address       : {inst.address}")
             print(f"Manufacturer  : {inst.manufacturer}")
             print(f"Model         : {inst.model}")
             print(f"Serial        : {inst.serial_number}")
