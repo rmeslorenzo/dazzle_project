@@ -168,7 +168,7 @@ class MainGUI(QtWidgets.QMainWindow):
         )
 
         self.connect_button.clicked.connect(
-            self.connect_instrument
+            self.connect_instrument_button
         )
 
         connection_layout.addWidget(
@@ -186,13 +186,25 @@ class MainGUI(QtWidgets.QMainWindow):
     # =====================================================
     # Connect instrument
     # =====================================================
+    # def auto_scan(self):
+    #     """Automatic recognition and connection of instruments.
+    #     """
+    #     self.manager.scan()
+    #     for inst in self.manager.list_instruments():
+    #         if inst.instrument_type is not None:
+    #             self.connect_instrument(inst.connection_type + "0", inst.address, ins)
 
-    def connect_instrument(self):
-
+    def connect_instrument_button(self):
 
         connection_type = self.connection_type.currentText()
         address = self.address.value()
         instrument_type = self.instrument_type.currentText()
+
+        self.connect_instrument(connection_type, address, instrument_type)
+
+
+    def connect_instrument(self, connection_type, address, instrument_type):
+
 
         try:
 
@@ -280,7 +292,7 @@ class MainGUI(QtWidgets.QMainWindow):
 
             return PRO8000_GUI(instrument)
 
-        elif instrument_type == "PowerMeter":
+        elif instrument_type == "powermeter":
 
             raise NotImplementedError(
                 "PowerMeter GUI not implemented yet."
