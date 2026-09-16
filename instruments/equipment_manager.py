@@ -4,6 +4,8 @@ import pyvisa
 
 from dazzle_project.instruments.equipment import Equipment
 from dazzle_project.instruments import get_instrument_class
+from dazzle_project.GUI.Instrument_GUI import InstrumentWidget
+from dazzle_project.GUI import get_instrument_gui_class
 
 @dataclass
 class InstrumentInfo:
@@ -17,6 +19,7 @@ class InstrumentInfo:
     identification: Optional[str] = None
     instrument_type: Optional[str] = None
     instrument_class: Optional[Equipment|None] = None
+    gui_class : Optional[InstrumentWidget|None] = None
 
 
 class EquipmentManager:
@@ -81,7 +84,7 @@ class EquipmentManager:
                     info.serial_number = parts[2]
                     info.firmware = parts[3]
 
-                info.instrument_type, info.instrument_class = self._guess_type(
+                info.instrument_type, info.instrument_class, info.gui_class = self._guess_type(
                     info.manufacturer,
                     info.model
                 )
@@ -129,10 +132,10 @@ class EquipmentManager:
             #     "dso", "mso", "scope", "oscilloscope"
             # },
             "laser driver" : [
-                  "pro8000"
+                  "PRO8000"
             ],
             "powermeter"   : [
-                "2835-c"
+                "2835-C"
             ],
             # "multimeter": {
             #     "dmm", "344", "multimeter"
@@ -153,10 +156,11 @@ class EquipmentManager:
 
         for instrument_type, instrument_list in keywords.items():
             for inst in instrument_list:
-                if inst in text:
+                if inst in text.upper():
                     equipment_class = get_instrument_class(inst)
-                    return instrument_type, equipment_class
-        return "unknown", None
+                    equipment_gui = get_instrument_gui_class(inst)
+                    return instrument_type, equipment_class, equipment_gui
+        return "unknown", None, None
 
     def list_instruments(self) -> List[InstrumentInfo]:
         return list(self.instruments.values())
@@ -192,6 +196,7 @@ if __name__ == "__main__":
             print(f"Firmware      : {inst.firmware}")
             print(f"Type          : {inst.instrument_type}")
             print(f"Class         : {inst.instrument_class}")
+            print(f"GUI           : {inst.gui_class}")
             print(f"Identification: {inst.identification}")
 
     finally:

@@ -1,6 +1,9 @@
 from PyQt6 import QtWidgets
 import pyvisa
 
+from dazzle_project.instruments import get_instrument_class, INSTRUMENT_CLASSES
+from dazzle_project.GUI import get_instrument_gui_class, INSTRUMENT_GUI_CLASSES
+
 from dazzle_project.instruments.equipment_manager import EquipmentManager
 from dazzle_project.instruments.pro8000 import PRO_8000, DummyPro8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
@@ -148,23 +151,24 @@ class MainGUI(QtWidgets.QMainWindow):
             QtWidgets.QLabel("Instrument:")
         )
 
-        self.instrument_type = QtWidgets.QComboBox()
+        self.instrument_model = QtWidgets.QComboBox()
 
-        self.instrument_type.addItems([
-            "PRO8000",
-            "2835-C",
-        ])
+        self.instrument_model.addItems(INSTRUMENT_CLASSES.keys())
 
         connection_layout.addWidget(
-            self.instrument_type
+            self.instrument_model
         )
 
         # Connect
         self.connect_button = QtWidgets.QPushButton(
             "Connect"
         )
-        self.autscan_button = QtWidgets.QPushButton(
+        self.autoscan_button = QtWidgets.QPushButton(
             "Auto-Scan"
+        )
+
+        self.autoscan_button.clicked.connect(
+            self.auto_scan
         )
 
         self.connect_button.clicked.connect(
@@ -175,7 +179,7 @@ class MainGUI(QtWidgets.QMainWindow):
             self.connect_button
         )
         connection_layout.addWidget(
-            self.autscan_button
+            self.autoscan_button
         )
 
         layout.addLayout(connection_layout)
@@ -186,24 +190,27 @@ class MainGUI(QtWidgets.QMainWindow):
     # =====================================================
     # Connect instrument
     # =====================================================
-    # def auto_scan(self):
-    #     """Automatic recognition and connection of instruments.
-    #     """
-    #     self.manager.scan()
-    #     for inst in self.manager.list_instruments():
-    #         if inst.instrument_type is not None:
-    #             self.connect_instrument(inst.connection_type + "0", inst.address, ins)
+    def auto_scan(self):
+        """Automatic recognition and connection of instruments.
+        """
+        self.manager.scan()
+        for inst_info in self.manager.list_instruments():
+            if inst_info.instrument_type is not None:
+                self.connect_instrument(inst_info.connection_type, inst_info.address, inst_info.model, inst_info.instrument_class, inst_info.gui_class)
 
     def connect_instrument_button(self):
 
         connection_type = self.connection_type.currentText()
         address = self.address.value()
-        instrument_type = self.instrument_type.currentText()
+        instrument_model = self.instrument_model.currentText()
 
-        self.connect_instrument(connection_type, address, instrument_type)
+        instrument_class     = get_instrument_class(instrument_model)
+        instrument_gui_class = get_instrument_gui_class(instrument_model)
+
+        self.connect_instrument(connection_type, address, instrument_model, instrument_class, instrument_gui_class)
 
 
-    def connect_instrument(self, connection_type, address, instrument_type):
+    def connect_instrument(self, connection_type, address, instrument_model, instrument_class, instrument_gui_class):
 
 
         try:
@@ -215,7 +222,8 @@ class MainGUI(QtWidgets.QMainWindow):
             instrument = self.create_instrument(
                 connection_type,
                 address,
-                instrument_type
+                instrument_model,
+                instrument_class
             )
 
             # ---------------------------------------------
@@ -223,8 +231,8 @@ class MainGUI(QtWidgets.QMainWindow):
             # ---------------------------------------------
 
             instrument_gui = self.create_instrument_gui(
-                instrument_type,
-                instrument
+                instrument,
+                instrument_gui_class
             )
 
         except Exception as e:
@@ -244,7 +252,7 @@ class MainGUI(QtWidgets.QMainWindow):
         instrument_info = {
             "instrument": instrument,
             "gui": instrument_gui,
-            "type": instrument_type,
+            "model": instrument_model,
             "connection": connection_type,
             "address": address,
         }
@@ -264,7 +272,7 @@ class MainGUI(QtWidgets.QMainWindow):
         # ---------------------------------------------
 
         tab_name = (
-            f"{instrument_type} "
+            f"{instrument_model} "
             f"({connection_type} {address})"
         )
 
@@ -282,7 +290,7 @@ class MainGUI(QtWidgets.QMainWindow):
     # Create instrument
     # =====================================================
 
-    def create_instrument_gui(
+    def create_instrument_gui_old(
             self,
             instrument_type,
             instrument
@@ -310,14 +318,22 @@ class MainGUI(QtWidgets.QMainWindow):
             self,
             connection_type,
             address,
-            instrument_type
+            instrument_model,
+            instrument_class,
     ):
-
-        if instrument_type == "PRO8000":
-
-            # Temporary during development
+        try:
             if self.dummy_mode:
-                return DummyPro8000()
+                    return DummyPro8000()
+            elif "GPIB" in connection_type:
+                connection_prefix = connection_type + "0"
+                connection_name = f"{connection_prefix}::{address}::INSTR"
+                return instrument_class(connection_name)
+            # USB connection to be done later.
+
+        except:
+            raise ValueError(f"Unknown Instrument: {instrument_model}")
+
+
 
             # Real implementation later:
             #
@@ -325,15 +341,15 @@ class MainGUI(QtWidgets.QMainWindow):
             #     resource = f"GPIB0::{address}::INSTR"
             #     return PRO_8000(resource)
 
-        elif instrument_type == "PowerMeter":
-
-            raise NotImplementedError(
-                "PowerMeter not implemented yet."
-            )
-
-        raise ValueError(
-            f"Unknown instrument: {instrument_type}"
-        )
+        # elif instrument_type == "PowerMeter":
+        #
+        #     raise NotImplementedError(
+        #         "PowerMeter not implemented yet."
+        #     )
+        #
+        # raise ValueError(
+        #     f"Unknown instrument: {instrument_type}"
+        # )
 
         # =====================================================
         # Create GUI
@@ -341,23 +357,40 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def create_instrument_gui(
             self,
-            instrument_type,
-            instrument
+            instrument,
+            instrument_gui_class
     ):
+        try:
+            if self.dummy_mode:
+                return PRO8000_GUI(instrument)
+            else :
+                if instrument_gui_class is None :
 
-        if instrument_type == "PRO8000":
+                    QtWidgets.QMessageBox.critical(
+                        self,
+                        "GUI Creation Error",
+                        f"Could not create Gui from gui class"
+                    )
+                    return
 
-            return PRO8000_GUI(instrument)
+                else :
+                    return instrument_gui_class(instrument)
 
-        elif instrument_type == "PowerMeter":
+        except Exception as e:
+            print(f"Error : {e}")
 
-            raise NotImplementedError(
-                "PowerMeter GUI not implemented yet."
-            )
-
-        raise ValueError(
-            f"No GUI available for {instrument_type}"
-        )
+        # if instrument_type == "PRO8000":
+        #
+        #     return PRO8000_GUI(instrument)
+        #
+        # elif instrument_type == "PowerMeter":
+        #
+        #     raise NotImplementedError(
+        #         "PowerMeter GUI not implemented yet."
+        #     )
+        #
+        # raise ValueError(
+        #     f"No GUI available for {instrument_type}"
 
     # =====================================================
     # Add instrument to table
@@ -370,9 +403,9 @@ class MainGUI(QtWidgets.QMainWindow):
         self.instrument_table.insertRow(row)
 
         values = [
-            instrument_info["type"],
+            instrument_info["model"],
             instrument_info["connection"],
-            str(instrument_info["address"]),
+            instrument_info["address"],
             "Connected",
         ]
 
@@ -450,7 +483,7 @@ if __name__ == "__main__":
 
     app = QtWidgets.QApplication(sys.argv)
 
-    window = MainGUI(dummy_mode=True)
+    window = MainGUI(dummy_mode=False)
     window.show()
 
     sys.exit(app.exec())
