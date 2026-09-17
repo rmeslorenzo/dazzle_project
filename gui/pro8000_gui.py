@@ -1,4 +1,4 @@
-# Form implementation generated from reading ui file 'GUI\pro8000.ui'
+# Form implementation generated from reading ui file 'gui\pro8000.ui'
 #
 # Created by: PyQt6 UI code generator 6.11.0
 #
@@ -16,7 +16,7 @@ import statistics
 import csv
 import datetime
 
-from dazzle_project.GUI.instrument_gui import InstrumentWidget
+from dazzle_project.gui.instrument_gui import InstrumentWidget
 from dazzle_project.instruments.pro8000 import PRO_8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
 from dazzle_project.instruments.test_wrap_2936_R import Newport_2936R
@@ -1199,7 +1199,7 @@ class PRO8000_GUI(InstrumentWidget):
                 #
                 self.instrument.set_diode_current(sw["current"])
                 read_ld_current = self.instrument.read_diode_current_slot6()
-                # Update laser current in GUI
+                # Update laser current in gui
                 self.worker.read_diode_current_ready.emit(read_ld_current)
                 #
                 # Wait for settling

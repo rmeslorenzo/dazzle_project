@@ -1,4 +1,4 @@
-from .pro8000_GUI import PRO8000_GUI
+from .pro8000_gui import PRO8000_GUI
 
 INSTRUMENT_GUI_CLASSES = {
     "PRO8000": PRO8000_GUI,

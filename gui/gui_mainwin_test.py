@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self.measure_button.clicked.connect(self.read_measurements)
 
     # ==================================================
-    # Functions called by the GUI
+    # Functions called by the gui
     # ==================================================
 
     def apply_parameters(self):

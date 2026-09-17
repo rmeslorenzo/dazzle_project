@@ -2,12 +2,12 @@ from PyQt6 import QtWidgets
 import pyvisa
 
 from dazzle_project.instruments import get_instrument_class, INSTRUMENT_CLASSES
-from dazzle_project.GUI import get_instrument_gui_class, INSTRUMENT_GUI_CLASSES
+from dazzle_project.gui import get_instrument_gui_class, INSTRUMENT_GUI_CLASSES
 
 from dazzle_project.instruments.equipment_manager import EquipmentManager
 from dazzle_project.instruments.pro8000 import PRO_8000, DummyPro8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
-from dazzle_project.GUI.pro8000_GUI import PRO8000_GUI
+from dazzle_project.gui.pro8000_gui import PRO8000_GUI
 
 
 class MainGUI(QtWidgets.QMainWindow):
@@ -227,7 +227,7 @@ class MainGUI(QtWidgets.QMainWindow):
             )
 
             # ---------------------------------------------
-            # Create instrument GUI
+            # Create instrument gui
             # ---------------------------------------------
 
             instrument_gui = self.create_instrument_gui(
@@ -303,11 +303,11 @@ class MainGUI(QtWidgets.QMainWindow):
         elif instrument_type == "powermeter":
 
             raise NotImplementedError(
-                "PowerMeter GUI not implemented yet."
+                "PowerMeter gui not implemented yet."
             )
 
         raise ValueError(
-            f"No GUI available for {instrument_type}"
+            f"No gui available for {instrument_type}"
         )
 
         # =====================================================
@@ -352,7 +352,7 @@ class MainGUI(QtWidgets.QMainWindow):
         # )
 
         # =====================================================
-        # Create GUI
+        # Create gui
         # =====================================================
 
     def create_instrument_gui(
@@ -368,7 +368,7 @@ class MainGUI(QtWidgets.QMainWindow):
 
                     QtWidgets.QMessageBox.critical(
                         self,
-                        "GUI Creation Error",
+                        "gui Creation Error",
                         f"Could not create Gui from gui class"
                     )
                     return
@@ -386,11 +386,11 @@ class MainGUI(QtWidgets.QMainWindow):
         # elif instrument_type == "PowerMeter":
         #
         #     raise NotImplementedError(
-        #         "PowerMeter GUI not implemented yet."
+        #         "PowerMeter gui not implemented yet."
         #     )
         #
         # raise ValueError(
-        #     f"No GUI available for {instrument_type}"
+        #     f"No gui available for {instrument_type}"
 
     # =====================================================
     # Add instrument to table
@@ -430,7 +430,7 @@ class MainGUI(QtWidgets.QMainWindow):
         instrument_info = self.instruments[row]
 
         # -------------------------------------------------
-        # Stop / close GUI
+        # Stop / close gui
         # -------------------------------------------------
 
         gui = instrument_info["gui"]

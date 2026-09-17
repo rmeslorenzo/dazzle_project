@@ -4,8 +4,8 @@ import pyvisa
 
 from dazzle_project.instruments.equipment import Equipment
 from dazzle_project.instruments import get_instrument_class
-from dazzle_project.GUI.Instrument_GUI import InstrumentWidget
-from dazzle_project.GUI import get_instrument_gui_class
+from dazzle_project.gui.instrument_gui import InstrumentWidget
+from dazzle_project.gui import get_instrument_gui_class
 
 @dataclass
 class InstrumentInfo:

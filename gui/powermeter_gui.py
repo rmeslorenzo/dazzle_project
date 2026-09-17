@@ -13,10 +13,10 @@ QVBoxLayout,
 import sys
 
 from dazzle_project.instruments.equipment import DummyEquipment
-from dazzle_project.GUI.instrument_gui import InstrumentWidget
+from dazzle_project.gui.instrument_gui import InstrumentWidget
 
 class POWERMETER_GUI(InstrumentWidget):
-    """Abstract class for the power meter GUI."""
+    """Abstract class for the power meter gui."""
     def __init__(self, instrument, mode_list : list|None = None, range_list : list|None = None):
         super().__init__(instrument)
 
