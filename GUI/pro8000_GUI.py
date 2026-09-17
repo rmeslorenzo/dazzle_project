@@ -16,7 +16,7 @@ import statistics
 import csv
 import datetime
 
-from dazzle_project.GUI.Instrument_GUI import InstrumentWidget
+from dazzle_project.GUI.instrument_gui import InstrumentWidget
 from dazzle_project.instruments.pro8000 import PRO_8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
 from dazzle_project.instruments.test_wrap_2936_R import Newport_2936R
@@ -290,11 +290,11 @@ class MeasurementWorker(QtCore.QObject):
     @QtCore.pyqtSlot(float)
     def apply_diode_current_limit(self, current_val):
 
-        if self.previous_diode_current_limit == current_val:
-            # Polarity controls are on slot 6
+        # Polarity controls are on slot 6
+        if self.previous_diode_current_limit != current_val:
             if self.instrument.current_slot == self.instrument.Slot.SLOT6:
                 self.instrument.set_laser_diode_software_current_limit(current_val)
-
+                self.previous_diode_current_limit = current_val
                 self.apply_diode_current_limit_ready.emit(current_val)
 
     @QtCore.pyqtSlot(float)
@@ -573,10 +573,19 @@ class PRO8000_GUI(InstrumentWidget):
         self.pushButton_13.setObjectName("pushButton_13")
         self.verticalLayout_6.addWidget(self.pushButton_13)
         self.gridLayout.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
-        self.widget = PlotWidget(parent=self.gridLayoutWidget)
-        self.widget.setMinimumSize(QtCore.QSize(200, 200))
-        self.widget.setObjectName("widget")
-        self.gridLayout.addWidget(self.widget, 1, 1, 1, 1)
+        # init pyqtgraphs
+        self.tec_graph = PlotWidget(parent=self.gridLayoutWidget)
+        self.tec_graph.setMinimumSize(QtCore.QSize(200, 200))
+        self.tec_graph.setObjectName("tec_temperature_graph")
+        self.tec_current_graph = PlotWidget(parent=self.gridLayoutWidget)
+        self.tec_current_graph.setMinimumSize(QtCore.QSize(200, 200))
+        self.tec_current_graph.setObjectName("tec_current_graph")
+        # self.tec_voltage_graph = PlotWidget(parent=self.gridLayoutWidget)
+        # self.tec_current_graph.setMinimumSize(QtCore.QSize(200, 200))
+        # self.tec_current_graph.setObjectName("tec_current_graph")
+        # end init pyqtgraphs
+        self.gridLayout.addWidget(self.tec_graph, 1, 1, 1, 1)
+        self.gridLayout.addWidget(self.tec_current_graph, 2, 1, 1, 1)
         self.verticalLayout_2 = QtWidgets.QVBoxLayout()
         self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.label_26 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
@@ -711,15 +720,15 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_19 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
         self.label_19.setObjectName("label_19")
         self.horizontalLayout_14.addWidget(self.label_19)
-        self.doubleSpinBox_6 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
-        self.doubleSpinBox_6.setMaximum(3.0)
-        self.doubleSpinBox_6.setSingleStep(0.01)
-        self.doubleSpinBox_6.setObjectName("doubleSpinBox_6")
-        self.horizontalLayout_14.addWidget(self.doubleSpinBox_6)
+        self.doubleSpinBox_laser_current_limit = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_laser_current_limit.setMaximum(3.0)
+        self.doubleSpinBox_laser_current_limit.setSingleStep(0.01)
+        self.doubleSpinBox_laser_current_limit.setObjectName("doubleSpinBox_laser_current_limit")
+        self.horizontalLayout_14.addWidget(self.doubleSpinBox_laser_current_limit)
         self.verticalLayout_4.addLayout(self.horizontalLayout_14)
-        self.pushButton_7 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
-        self.pushButton_7.setObjectName("pushButton_7")
-        self.verticalLayout_4.addWidget(self.pushButton_7)
+        self.laser_current_limit_button = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.laser_current_limit_button.setObjectName("laser_current_limit_button")
+        self.verticalLayout_4.addWidget(self.laser_current_limit_button)
         self.horizontalLayout_15 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_15.setObjectName("horizontalLayout_15")
         self.label_20 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
@@ -802,8 +811,8 @@ class PRO8000_GUI(InstrumentWidget):
         self.pushButton.clicked.connect(self.toogle_tec)
         self.pushButton_2.setCheckable(True)
         self.pushButton_2.clicked.connect(self.toogle_pid_sharei)
-        self.pushButton_7.clicked.connect(
-            lambda: self.worker.apply_diode_current_limit_requested.emit(self.doubleSpinBox_6.value()))
+        self.laser_current_limit_button.clicked.connect(
+            lambda: self.worker.apply_diode_current_limit_requested.emit(self.doubleSpinBox_laser_current_limit.value()))
         self.pushButton_8.clicked.connect(
             lambda: self.worker.apply_diode_current_requested.emit(self.doubleSpinBox_10.value()))
         self.pushButton_9.clicked.connect(
@@ -833,7 +842,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.doubleSpinBox_3.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_4.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_5.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
-        self.doubleSpinBox_6.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_laser_current_limit.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_7.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_8.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
         self.doubleSpinBox_9.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
@@ -859,14 +868,31 @@ class PRO8000_GUI(InstrumentWidget):
         self.doubleSpinBox_12.setDecimals(3)
 
         # PYQTGRAPH : Measure TEC temp over time
-        self.widget.setWindowTitle("Temperature vs Time")
-        self.widget.setLabel("left", "Temperature [degC]")
-        self.widget.setLabel("bottom", "Time", units="s")
-        self.widget.showGrid(x=True, y=True)
-        self.curve = self.widget.plot(
+        self.tec_graph.setWindowTitle("Temperature vs Time")
+        self.tec_current_graph.setWindowTitle("Current vs Time")
+        self.tec_graph.setLabel("left", "Temperature [degC]")
+        self.tec_graph.setLabel("bottom", "Time", units="s")
+        self.tec_current_graph.setLabel("left", "TEC Current/Voltage [A/V]")
+        self.tec_current_graph.setLabel("bottom", "Time", units="s")
+        self.tec_graph.showGrid(x=True, y=True)
+        self.tec_current_graph.showGrid(x=True, y=True)
+
+        # Curve for TEC temperature
+        self.curve_temp = self.tec_graph.plot(
             pen=pg.mkPen(color="green", width=2)
         )
+        # Curve for TEC current and voltage
+        self.tec_current_graph.addLegend()
+
+        self.curve_tec_current = self.tec_current_graph.plot(
+            pen=pg.mkPen(color="red", width=2), name="TEC Current [A]"
+        )
+        self.curve_tec_voltage = self.tec_current_graph.plot(
+            pen=pg.mkPen(color="yellow", width=2), name="TEC Voltage [V]"
+        )
         self.time = []
+        self.tec_current = []
+        self.tec_voltage = []
         self.temp = []
         self.start_time = time.monotonic()
         # channel buttons
@@ -1052,7 +1078,7 @@ class PRO8000_GUI(InstrumentWidget):
         # ---------------------------
         # PYQTGPRAPH Functions
         # --------------------------
-    MAX_TIME = 600
+    MAX_TIME = 120
 
     def update_temperature_plot(self):
 
@@ -1064,13 +1090,19 @@ class PRO8000_GUI(InstrumentWidget):
         while self.time and self.time[0] < cutoff:
             self.time.pop(0)
             self.temp.pop(0)
+            self.tec_current.pop(0)
+            self.tec_voltage.pop(0)
 
         # Store data
         self.time.append(elapsed)
         self.temp.append(self.worker.current_temperature)
+        self.tec_current.append(self.worker.current_ite_current) # see results in mA
+        self.tec_voltage.append(self.worker.current_vte_voltage)
 
         # Update graph
-        self.curve.setData(self.time, self.temp)
+        self.curve_temp.setData(self.time, self.temp)
+        self.curve_tec_current.setData(self.time, self.tec_current)
+        self.curve_tec_voltage.setData(self.time, self.tec_voltage)
 
 
     # ------------------------------------
@@ -1084,16 +1116,17 @@ class PRO8000_GUI(InstrumentWidget):
         npoints = int(self.doubleSpinBox_13.value())
 
         powermeter = None
-        powermeter_model = False # if true your using the 2835 otherwise it is the 2936
+        powermeter_model = True # if true your using the 2835 otherwise it is the 2936
+        laser = "25118553-BNT100"
         print("instantiate powermeter")
         try:
             # powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
             if powermeter_model:
                 powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
-                model = "newport_2836_C"
+                model = "newport_2835_C"
                 sleep(2)
                 # channel A selection
-                powermeter.set_wavelength(530, powermeter.Channel.CHANNELB)
+                powermeter.set_wavelength(powermeter.Channel.CHANNELB, 530)
                 # powermeter.set_wavelength(530, channel=powermeter.Channel.CHANNELB)
             else :
                 powermeter = Newport_2936R()
@@ -1122,7 +1155,7 @@ class PRO8000_GUI(InstrumentWidget):
         # sweep = ParameterSweep(start, stop, npoints)
 
         filename = (
-            f"ld_sweep_{model}_"
+            f"{laser}_ld_sweep_{model}_"
             f"{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
         )
 
@@ -1131,6 +1164,7 @@ class PRO8000_GUI(InstrumentWidget):
 
             writer.writerow([
                 "Model",
+                "laser",
                 "set_ld_current_A",
                 "read_current_A",
                 "temperature_avg_degC",
@@ -1139,8 +1173,8 @@ class PRO8000_GUI(InstrumentWidget):
                 "tec_current_std_A",
                 "tec_voltage_avg_A",
                 "tec_voltage_std_A",
-                "power_avg_mW",
-                "power_std_mW"
+                "power_avg_W",
+                "power_std_W"
             ])
 
             #
@@ -1153,7 +1187,8 @@ class PRO8000_GUI(InstrumentWidget):
             self.toogle_ld(True)
 
             # number of sampling for each measurement
-            WAIT = 5
+            WAIT = 10
+            sleep(WAIT)
             N_MEASUREMENTS = 10
 
             for sw in sweep:
@@ -1219,6 +1254,9 @@ class PRO8000_GUI(InstrumentWidget):
                         power = 0
                         powers.append(power)
 
+                    print(f"power is {power:.4f} W")
+
+
 
                 temp_avg = statistics.mean(temperatures)
                 temp_std = statistics.stdev(temperatures) \
@@ -1236,6 +1274,7 @@ class PRO8000_GUI(InstrumentWidget):
                 # Save
                 #
                 writer.writerow([
+                    laser,
                     model,
                     sw["current"],
                     read_ld_current,
@@ -1330,7 +1369,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_24.setText(_translate("PRO8000_GUI", "current : ---- [A]"))
         self.pushButton_8.setText(_translate("PRO8000_GUI", "Apply LD current"))
         self.label_19.setText(_translate("PRO8000_GUI", "Soft Current  Limit Imax [A]"))
-        self.pushButton_7.setText(_translate("PRO8000_GUI", "Apply Current Limit"))
+        self.laser_current_limit_button.setText(_translate("PRO8000_GUI", "Apply Current Limit"))
         self.label_20.setText(_translate("PRO8000_GUI", "Read Hard Limit"))
         self.label_21.setText(_translate("PRO8000_GUI", "----- [A]"))
         self.label_22.setText(_translate("PRO8000_GUI", "Read VLD"))

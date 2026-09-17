@@ -324,14 +324,15 @@ class PRO_8000(Equipment):
         """Set the diode software current limit."""
         if self.current_slot == self.Slot.SLOT6:
             self.write(":LIMC:SET {}".format(LIMC))
+            print(f"laser current limit set to {LIMC} A")
 
     def read_laser_diode_software_current_limit(self):
         """Set the diode software current limit."""
         result = -1
         if self.current_slot == self.Slot.SLOT6:
             self.write(":LIMC:SET?")
-            result = self.read()
-        return result
+            result = self.read().strip(":LIMC:SET ")
+        return float(result)
 
     def read_laser_diode_voltage(self, slot):
         """Read the current laser diode voltage."""

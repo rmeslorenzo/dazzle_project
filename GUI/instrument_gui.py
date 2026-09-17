@@ -14,7 +14,7 @@ class InstrumentWidget(QWidget):
         super().__init__()
         self.instrument = instrument
 
-        self.mainLayout = QVBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
 
 
 
