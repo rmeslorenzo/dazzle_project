@@ -374,7 +374,7 @@ class MainGUI(QtWidgets.QMainWindow):
                     return
 
                 else :
-                    return instrument_gui_class(instrument)
+                    return instrument_gui_class(instrument, parent=self)
 
         except Exception as e:
             print(f"Error : {e}")

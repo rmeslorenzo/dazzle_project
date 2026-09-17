@@ -83,7 +83,12 @@ class NEWPORT_2835_C(Equipment):
         self.write(f"RUN_{channel.value}")
 
     def read_single_channel(self, channel : Channel):
-        return float(self.query(f"R_{channel.value}?"))
+        result = self.query(f"R_{channel.value}?")
+
+        try :
+            return float(result)
+        except ValueError as vale :
+            print(f"Could not convert into float wrong message {vale}")
 
     def read_single_power(self):
         return self.read_single_channel(channel=self.Channel.CHANNELB)

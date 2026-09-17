@@ -17,8 +17,8 @@ from dazzle_project.gui.instrument_gui import InstrumentWidget
 
 class POWERMETER_GUI(InstrumentWidget):
     """Abstract class for the power meter gui."""
-    def __init__(self, instrument, mode_list : list|None = None, range_list : list|None = None):
-        super().__init__(instrument)
+    def __init__(self, instrument, parent=None, mode_list : list|None = None, range_list : list|None = None):
+        super().__init__(instrument, parent=parent)
 
         self.setWindowTitle("Power Meter")
 

@@ -28,6 +28,150 @@ class AcquisitionMode(Enum):
     MANUAL_CH6 = 2
     AUTO = 3
 
+class LDControlerWidget(InstrumentWidget):
+    def __init__(self, instrument, parent, channel : int = 0):
+        super().__init__(instrument, parent)
+        self.slot_number = channel
+        if self.slot_number == 6 :
+            self.laser_on  = self.instrument.set_ld_on_ch6
+            self.laser_off = self.instrument.set_ld_off_ch6
+        elif self.slot_number == 4 :
+            self.laser_on  = self.instrument.set_ld_on_ch4
+            self.laser_off = self.instrument.set_ld_off_ch4
+        else:
+            raise ValueError("Wrong channel input for LD Controller.")
+        if self.slot_number == 6:
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch6_requested
+        elif self.slot_number == 4:
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch4_requested
+        else:
+            raise ValueError("Wrong channel input for LD Controller.")
+
+        # Shape Box
+        diode_control_label = QtWidgets.QLabel(parent=self)
+        diode_control_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        diode_control_label.setObjectName("diode_control_label")
+        diode_control_label.setText(f"DIODE CONTROL Channel {channel}")
+
+        self.main_layout.addWidget(diode_control_label)
+
+        # Laser Toggle
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Laser Toggle"))
+        self.laser_toogle = QtWidgets.QPushButton(parent=self)
+        self.laser_toogle.setText("OFF")
+        self.laser_toogle.setStyleSheet("background-color: red;")
+        row.addWidget(self.laser_toogle)
+        self.main_layout.addLayout(row)
+        self.laser_toogle.setCheckable(True)
+
+        # Laser Diode Polarity
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Laser Diode Polarity"))
+
+        self.ld_polarity = QtWidgets.QComboBox()
+        self.ld_polarity.addItems([p.value for p in self.instrument.Polarity])
+        row.addWidget(self.ld_polarity)
+
+        self.ld_read = QtWidgets.QLabel("Read Polarity : --")
+        row.addWidget(self.ld_read)
+
+        self.main_layout.addLayout(row)
+
+        # Photo Diode Polarity
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Photo Diode Polarity"))
+        self.pd_polarity = QtWidgets.QComboBox()
+        self.pd_polarity.addItems([p.value for p in self.instrument.Polarity])
+        row.addWidget(self.pd_polarity)
+
+        self.pd_read = QtWidgets.QLabel("Read Polarity : --")
+        row.addWidget(self.pd_read)
+
+        self.main_layout.addLayout(row)
+
+        # Apply Polarity
+        self.btn_apply_polarity = QtWidgets.QPushButton("Apply Polarity")
+        self.main_layout.addWidget(self.btn_apply_polarity)
+
+        # Diode Current
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Set diode current [A]"))
+
+        self.current_spin = QtWidgets.QDoubleSpinBox()
+        self.current_spin.setDecimals(4)
+        self.current_spin.setRange(0.0, 10.0)
+        self.current_spin.setSingleStep(0.001)
+        row.addWidget(self.current_spin)
+        self.current_read = QtWidgets.QLabel("current : ---- [A]")
+        row.addWidget(self.current_read)
+
+        self.main_layout.addLayout(row)
+        # Apply Current
+        self.btn_apply_current = QtWidgets.QPushButton("Apply LD current")
+        self.main_layout.addWidget(self.btn_apply_current)
+
+        # Soft Limit
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Soft Current Limit Imax [A]"))
+        self.limit_spin = QtWidgets.QDoubleSpinBox()
+        self.limit_spin.setDecimals(2)
+        self.limit_spin.setRange(0.0, 10.0)
+        row.addWidget(self.limit_spin)
+        self.btn_apply_current_limit = QtWidgets.QPushButton("Apply Limit Current")
+        row.addWidget(self.btn_apply_current_limit)
+        self.main_layout.addLayout(row)
+
+        self.btn_apply_polarity = QtWidgets.QPushButton("Apply Polarity")
+        self.main_layout.addWidget(self.btn_apply_polarity)
+
+        # Read Hard Limit
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Read Hard Limit"))
+        self.hard_limit_label = QtWidgets.QLabel("---- [A]")
+        row.addWidget(self.hard_limit_label)
+        self.main_layout.addLayout(row)
+
+        # Read VLD
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Read VLD"))
+        self.vld_label = QtWidgets.QLabel("---- [V]")
+        row.addWidget(self.vld_label)
+        self.main_layout.addLayout(row)
+
+        self.setLayout(self.main_layout)
+
+        # -----------------------------
+        def set_default():
+            self.set_diode_current_limit(0.001)
+
+        # --------------------------------
+        #        CONNECTIONS
+        # --------------------------------
+        self.laser_toogle.clicked.connect(self.toogle_ld)
+        self.btn_apply_current.clicked.connect(lambda: self.apply_current_requested.emit(self.current_spin.value()))
+        # self.laser_current_limit_button.clicked.connect(lambda: self.parent.worker.apply_diode_current_limit_requested.emit(
+        #         self.limit_spin.value()))
+
+    # -------------------------------------
+    #              FUNCTIONS
+    # -------------------------------------
+    def toogle_ld(self, checked):
+        print("toggle_ld:", checked)
+        if checked:
+            print("toogle ld on")
+            self.laser_toogle.setText("ON")
+            self.laser_toogle.setStyleSheet("background-color: green;")
+            self.laser_on()
+        else:
+            print("toogle ld off")
+            self.laser_toogle.setText("OFF")
+            self.laser_toogle.setStyleSheet("background-color: red;")
+            self.laser_off()
+
+    def set_diode_current_limit(self, value):
+        self.parent.instrument.set_laser_diode_software_current_limit(value)
+
 
 
 class MeasurementWorker(QtCore.QObject):
@@ -45,20 +189,26 @@ class MeasurementWorker(QtCore.QObject):
     read_hardware_current_limit_ready = QtCore.pyqtSignal(float)
     read_vld_ready                    = QtCore.pyqtSignal(float)
 
+    read_powermeter_ready             = QtCore.pyqtSignal(float)
+
     update_plot_requested             = QtCore.pyqtSignal(bool)
     # read_all_ready = QtCore.pyqtSignal(float, float, float)
     apply_temperature_requested         = QtCore.pyqtSignal(float)
     apply_pid_requested                 = QtCore.pyqtSignal(float, float, float)
     apply_tec_soft_current_limit_requested  = QtCore.pyqtSignal(float)
     apply_polarity_requested            = QtCore.pyqtSignal(str, str)
-    apply_diode_current_requested       = QtCore.pyqtSignal(float)
-    apply_diode_current_limit_requested = QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_requested       = QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_limit_requested = QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_requested       = QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_limit_requested = QtCore.pyqtSignal(float)
     apply_sweep_requested               = QtCore.pyqtSignal(float, float, int)
 
     polarity_applied_ready             =  QtCore.pyqtSignal(str, str)
-    apply_diode_current_ready          =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_ready          =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_ready      = QtCore.pyqtSignal(float)
     apply_tec_soft_current_limit_ready     =  QtCore.pyqtSignal(float)
-    apply_diode_current_limit_ready    =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_limit_ready    =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_limit_ready = QtCore.pyqtSignal(float)
     temperature_applied_ready          =  QtCore.pyqtSignal(float)
     apply_sweep_ready                  =  QtCore.pyqtSignal(float, float, int)
     apply_pid_ready                    =  QtCore.pyqtSignal(float, float, float)
@@ -66,21 +216,28 @@ class MeasurementWorker(QtCore.QObject):
     apply_pid_changed                  =  QtCore.pyqtSignal(object)
     apply_tec_soft_current_limit_changed   = QtCore.pyqtSignal(object)
 
+    check_powermeter_ready                  = QtCore.pyqtSignal(bool)
+
+
+
 
     def __init__(self):
         super().__init__()
         self.instrument = None
+        self.powermeter = None
         self.queue = queue.Queue()
         self.next_slot = 0
         self.current_temperature = 0
         self.current_resistance  = 0
         self.current_vte_voltage = 0
         self.current_ite_current = 0
+        self.current_power = 0
         self.current_calibration = None
         self.previous_ld_polarity = None
         self.previous_pd_polarity = None
         self.previous_diode_current = None
         self.previous_diode_current_limit = None
+        self.powermeter_created = False
 
     # TEC
     @QtCore.pyqtSlot()
@@ -213,6 +370,15 @@ class MeasurementWorker(QtCore.QObject):
             self.read_vld_ready.emit(value)
 
     @QtCore.pyqtSlot()
+    def read_powermeter(self):
+            if self.powermeter_created:
+                value = self.powermeter.read_single_power()
+                # print(f"power is {value} W")
+                if isinstance(value, float) :
+                    self.current_power = value
+                    self.read_powermeter_ready.emit(value)
+
+    @QtCore.pyqtSlot()
     def read_all_ld(self):
 
         self.instrument.select_slot(
@@ -263,7 +429,8 @@ class MeasurementWorker(QtCore.QObject):
     @QtCore.pyqtSlot(str, str)
     def apply_polarities(self, pd_pol, ld_pol):
 
-        if self.previous_pd_polarity != pd_pol or self.previous_ld_polarity != ld_pol:
+        if self.previous_pd_polarity != pd_pol or self.previous_ld_polarity != ld_pol or not self.previous_ld_polarity in ["AG, CG"] or not self.previous_pd_polarity in ["AG, CG"]:
+
             # Polarity controls are on slot 6
             if self.instrument.current_slot == self.instrument.Slot.SLOT6 :
 
@@ -277,25 +444,59 @@ class MeasurementWorker(QtCore.QObject):
                 self.polarity_applied_ready.emit(pd_pol, ld_pol)
 
     @QtCore.pyqtSlot(float)
-    def apply_diode_current(self, current_val):
+    def apply_diode_current_ch6(self, current_val):
 
         print(f"applying diode current: {current_val} [A]")
         # Polarity controls are on slot 6
         if self.instrument.current_slot == self.instrument.Slot.SLOT6:
             self.instrument.set_diode_current(current_val)
             self.previous_diode_current = current_val
-            self.apply_diode_current_ready.emit(current_val)
+            self.apply_diode_current_ch6_ready.emit(current_val)
+        else :
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(self.instrument.Slot.SLOT6)
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.instrument.select_slot(previous_slot)
+            self.apply_diode_current_ch6_ready.emit(current_val)
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch4(self, current_val):
+
+        print(f"applying diode current: {current_val} [A]")
+        # Polarity controls are on slot 4
+        if self.instrument.current_slot == self.instrument.Slot.SLOT4:
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.apply_diode_current_ch4_ready.emit(current_val)
+        else:
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(self.instrument.Slot.SLOT4)
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.instrument.select_slot(previous_slot)
+            self.apply_diode_current_ch4_ready.emit(current_val)
 
 
     @QtCore.pyqtSlot(float)
-    def apply_diode_current_limit(self, current_val):
+    def apply_diode_current_ch6_limit(self, current_val):
 
         # Polarity controls are on slot 6
         if self.previous_diode_current_limit != current_val:
             if self.instrument.current_slot == self.instrument.Slot.SLOT6:
                 self.instrument.set_laser_diode_software_current_limit(current_val)
                 self.previous_diode_current_limit = current_val
-                self.apply_diode_current_limit_ready.emit(current_val)
+                self.apply_diode_current_ch6_limit_ready.emit(current_val)
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch4_limit(self, current_val):
+
+        # Polarity controls are on slot 6
+        if self.previous_diode_current_limit != current_val:
+            if self.instrument.current_slot == self.instrument.Slot.SLOT4:
+                self.instrument.set_laser_diode_software_current_limit(current_val)
+                self.previous_diode_current_limit = current_val
+                self.apply_diode_current_ch4_limit_ready.emit(current_val)
 
     @QtCore.pyqtSlot(float)
     def apply_temperature(self, temperature):
@@ -341,19 +542,24 @@ class MeasurementWorker(QtCore.QObject):
             print(type(e).__name__)
             print(e)
 
+    @QtCore.pyqtSlot(bool)
+    def apply_create_powermeter(self):
+
+        if not self.powermeter_created:
+            self.check_powermeter_ready.emit(True)
+
 
 class PRO8000_GUI(InstrumentWidget):
 
     def __init__(self, instrument, parent=None):
 
-        super().__init__(instrument)
-
+        super().__init__(instrument, parent=parent)
         # ------------
         #   SETUP UI
         # ------------
         self.centralwidget = QtWidgets.QWidget(self)
-        # self.mainLayout = QtWidgets.QVBoxLayout(self)
-        self.mainLayout.addWidget(self.centralwidget)
+        # self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.addWidget(self.centralwidget)
 
         self.centralwidget.setObjectName("centralwidget")
         self.gridLayoutWidget = QtWidgets.QWidget(parent=self.centralwidget)
@@ -364,7 +570,7 @@ class PRO8000_GUI(InstrumentWidget):
         # self.gridLayoutWidget.setGeometry(QtCore.QRect(40, 30, 1056, 758))
         self.gridLayoutWidget.setObjectName("gridLayoutWidget")
         self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
-        self.mainLayout.addWidget(self.gridLayoutWidget)
+        self.main_layout.addWidget(self.gridLayoutWidget)
 
 
         # ------------------------
@@ -562,30 +768,31 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_46 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
         self.label_46.setObjectName("label_46")
         self.horizontalLayout_24.addWidget(self.label_46)
-        self.checkBox = QtWidgets.QCheckBox(parent=self.gridLayoutWidget)
-        self.checkBox.setObjectName("checkBox")
-        self.horizontalLayout_24.addWidget(self.checkBox)
-        self.checkBox_2 = QtWidgets.QCheckBox(parent=self.gridLayoutWidget)
-        self.checkBox_2.setObjectName("checkBox_2")
-        self.horizontalLayout_24.addWidget(self.checkBox_2)
+        self.check_powermeter = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.check_powermeter.setObjectName("Check Power Meter")
+        self.horizontalLayout_24.addWidget(self.check_powermeter)
+        self.check_powermeter_2 = QtWidgets.QCheckBox(parent=self.gridLayoutWidget)
+        self.check_powermeter_2.setObjectName("checkBox_2")
+        self.horizontalLayout_24.addWidget(self.check_powermeter_2)
         self.verticalLayout_6.addLayout(self.horizontalLayout_24)
         self.pushButton_13 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
         self.pushButton_13.setObjectName("pushButton_13")
         self.verticalLayout_6.addWidget(self.pushButton_13)
         self.gridLayout.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
+        # --------------------------------------
         # init pyqtgraphs
-        self.tec_graph = PlotWidget(parent=self.gridLayoutWidget)
-        self.tec_graph.setMinimumSize(QtCore.QSize(200, 200))
-        self.tec_graph.setObjectName("tec_temperature_graph")
+        # --------------------------------------
+        self.tec_temperature_graph = PlotWidget(parent=self.gridLayoutWidget)
+        self.tec_temperature_graph.setMinimumSize(QtCore.QSize(200, 200))
+        self.tec_temperature_graph.setObjectName("tec_temperature_graph")
         self.tec_current_graph = PlotWidget(parent=self.gridLayoutWidget)
         self.tec_current_graph.setMinimumSize(QtCore.QSize(200, 200))
         self.tec_current_graph.setObjectName("tec_current_graph")
-        # self.tec_voltage_graph = PlotWidget(parent=self.gridLayoutWidget)
-        # self.tec_current_graph.setMinimumSize(QtCore.QSize(200, 200))
-        # self.tec_current_graph.setObjectName("tec_current_graph")
+        self.gridLayout.addWidget(self.tec_temperature_graph, 2, 1, 1, 1)
+        self.gridLayout.addWidget(self.tec_current_graph, 2, 2, 1, 1)
+        # ----------------------------------------
         # end init pyqtgraphs
-        self.gridLayout.addWidget(self.tec_graph, 1, 1, 1, 1)
-        self.gridLayout.addWidget(self.tec_current_graph, 2, 1, 1, 1)
+        # ----------------------------------------
         self.verticalLayout_2 = QtWidgets.QVBoxLayout()
         self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.label_26 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
@@ -652,10 +859,10 @@ class PRO8000_GUI(InstrumentWidget):
         self.gridLayout.addLayout(self.verticalLayout_2, 1, 0, 1, 1)
         self.verticalLayout_4 = QtWidgets.QVBoxLayout()
         self.verticalLayout_4.setObjectName("verticalLayout_4")
-        self.label_28 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
-        self.label_28.setFrameShape(QtWidgets.QFrame.Shape.Box)
-        self.label_28.setObjectName("label_28")
-        self.verticalLayout_4.addWidget(self.label_28)
+        self.label_laser_control_ch6 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_laser_control_ch6.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_laser_control_ch6.setObjectName("label_laser_control_ch6")
+        self.verticalLayout_4.addWidget(self.label_laser_control_ch6)
         self.horizontalLayout_21 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_21.setObjectName("horizontalLayout_21")
         self.label_36 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
@@ -765,6 +972,8 @@ class PRO8000_GUI(InstrumentWidget):
         # ----------------------
 
         self.instrument = instrument
+        self.powermeter_detected = False
+        self.powermeter_graph_created = False
         self.acquisition_mode = AcquisitionMode.MANUAL_CH1
         self.instrument.select_slot(PRO_8000.Slot.SLOT1)
 
@@ -797,24 +1006,30 @@ class PRO8000_GUI(InstrumentWidget):
         # Apply Values
         self.worker.apply_polarity_requested.connect(self.worker.apply_polarities)
         self.worker.apply_pid_requested.connect(self.worker.apply_pid)
-        self.worker.apply_diode_current_requested.connect(self.worker.apply_diode_current)
-        self.worker.apply_diode_current_limit_requested.connect(self.worker.apply_diode_current_limit)
+        self.worker.apply_diode_current_ch6_requested.connect(self.worker.apply_diode_current_ch6)
+        self.worker.apply_diode_current_ch4_requested.connect(self.worker.apply_diode_current_ch4)
+        self.worker.apply_diode_current_ch6_limit_requested.connect(self.worker.apply_diode_current_ch6_limit)
+        self.worker.apply_diode_current_ch4_limit_requested.connect(self.worker.apply_diode_current_ch4_limit)
         self.worker.apply_temperature_requested.connect(self.worker.apply_temperature)
         self.worker.apply_tec_soft_current_limit_requested.connect(self.worker.apply_tec_current_soft_limit)
+
 
         # Apply Value trigger read
         self.worker.apply_pid_changed.connect(self.worker.read_pid_settings)
         self.worker.apply_tec_soft_current_limit_changed.connect(self.worker.read_tec_soft_current_limit)
 
+        # create powermeter
+        self.check_powermeter.clicked.connect(self.worker.apply_create_powermeter)
+        self.worker.check_powermeter_ready.connect(self.create_powermeter)
         # Connection of the buttons
         self.pushButton.setCheckable(True)
         self.pushButton.clicked.connect(self.toogle_tec)
         self.pushButton_2.setCheckable(True)
         self.pushButton_2.clicked.connect(self.toogle_pid_sharei)
         self.laser_current_limit_button.clicked.connect(
-            lambda: self.worker.apply_diode_current_limit_requested.emit(self.doubleSpinBox_laser_current_limit.value()))
+            lambda: self.worker.apply_diode_current_ch6_limit_requested.emit(self.doubleSpinBox_laser_current_limit.value()))
         self.pushButton_8.clicked.connect(
-            lambda: self.worker.apply_diode_current_requested.emit(self.doubleSpinBox_10.value()))
+            lambda: self.worker.apply_diode_current_ch6_requested.emit(self.doubleSpinBox_10.value()))
         self.pushButton_9.clicked.connect(
             lambda: self.worker.apply_polarity_requested.emit(self.comboBox_4.currentText(),
                                                               self.comboBox_3.currentText()))
@@ -833,6 +1048,12 @@ class PRO8000_GUI(InstrumentWidget):
         self.comboBox_2.addItems([c.value for c in self.instrument.Calibration])
 
         self.pushButton_13.clicked.connect(self.measure_current_sweep)
+
+        # ------------------------------------
+        #    LD CONTROLER CHANNLE 4
+        # ------------------------------------
+        self.ld_controler_ch4 = LDControlerWidget(instrument=self.instrument, parent=self, channel=4)
+        self.gridLayout.addWidget(self.ld_controler_ch4, 1, 1, 1, 1)
 
         # --------------------------------
         #    WIDGET Modifications
@@ -868,17 +1089,17 @@ class PRO8000_GUI(InstrumentWidget):
         self.doubleSpinBox_12.setDecimals(3)
 
         # PYQTGRAPH : Measure TEC temp over time
-        self.tec_graph.setWindowTitle("Temperature vs Time")
+        self.tec_temperature_graph.setWindowTitle("Temperature vs Time")
         self.tec_current_graph.setWindowTitle("Current vs Time")
-        self.tec_graph.setLabel("left", "Temperature [degC]")
-        self.tec_graph.setLabel("bottom", "Time", units="s")
+        self.tec_temperature_graph.setLabel("left", "Temperature [degC]")
+        self.tec_temperature_graph.setLabel("bottom", "Time", units="s")
         self.tec_current_graph.setLabel("left", "TEC Current/Voltage [A/V]")
         self.tec_current_graph.setLabel("bottom", "Time", units="s")
-        self.tec_graph.showGrid(x=True, y=True)
+        self.tec_temperature_graph.showGrid(x=True, y=True)
         self.tec_current_graph.showGrid(x=True, y=True)
 
         # Curve for TEC temperature
-        self.curve_temp = self.tec_graph.plot(
+        self.curve_temp = self.tec_temperature_graph.plot(
             pen=pg.mkPen(color="green", width=2)
         )
         # Curve for TEC current and voltage
@@ -894,6 +1115,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.tec_current = []
         self.tec_voltage = []
         self.temp = []
+        self.power = []
         self.start_time = time.monotonic()
         # channel buttons
         self.pushButton_CH1.setChecked(True)
@@ -914,6 +1136,40 @@ class PRO8000_GUI(InstrumentWidget):
     # -------------------
     #   periodic update
     # -------------------
+    def create_powermeter(self):
+        print("check powermeter")
+        if self.parent is not None and not self.powermeter_detected:
+            for inst in self.parent.instruments:
+                if "2835-C" in inst["model"]:
+                    print("creating powermeter")
+                    self.worker.powermeter = inst["instrument"]
+                    # this goes into the function inside the gui
+                    self.powermeter_detected = True
+                    self.power_graph = PlotWidget(parent=self.gridLayoutWidget)
+                    self.gridLayout.addWidget(self.power_graph, 1, 2, 1, 1)
+                    self.power_graph.setMinimumSize(QtCore.QSize(200, 200))
+                    self.power_graph.setObjectName("power_graph")
+                    self.power_graph.setLabel("left", "Power [mW]")
+                    self.power_graph.setLabel("bottom", "Time", units="s")
+                    self.power_graph.showGrid(x=True, y=True)
+                    # curve power
+                    self.curve_power = self.power_graph.plot(
+                        pen=pg.mkPen(color="blue", width=2)
+                    )
+                    self.power_graph.show()
+                    self.main_layout.update()
+                    self.update()
+
+                    self.powermeter_graph_created = True
+                    self.worker.powermeter_created = True
+        else :
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Warning !",
+                f"No powermeter found"
+            )
+
+
     def periodic_update(self):
 
         if self.acquisition_mode == AcquisitionMode.AUTO:
@@ -928,6 +1184,9 @@ class PRO8000_GUI(InstrumentWidget):
             self.worker.read_vld_voltage()
             self.worker.read_hard_current_limit()
 
+        if self.powermeter_detected and self.powermeter_graph_created and self.worker.powermeter_created:
+            self.worker.read_powermeter()
+
         # --------------------
         #   INPUT FUNCTIONS
         # --------------------
@@ -939,7 +1198,7 @@ class PRO8000_GUI(InstrumentWidget):
             self.pushButton.setStyleSheet("background-color: green;")
             self.instrument.tec_on()
         else:
-            if not self.instrument.laser_enabled:
+            if not self.instrument.laser_enabled_ch6:
                 self.pushButton.setText("OFF")
                 self.pushButton.setStyleSheet("background-color: red;")
                 self.instrument.tec_off()
@@ -985,12 +1244,12 @@ class PRO8000_GUI(InstrumentWidget):
             print("toogle ld on")
             self.pushButton_10.setText("ON")
             self.pushButton_10.setStyleSheet("background-color: green;")
-            self.instrument.set_ld_on()
+            self.instrument.set_ld_on_ch6()
         else:
             print("toogle ld off")
             self.pushButton_10.setText("OFF")
             self.pushButton_10.setStyleSheet("background-color: red;")
-            self.instrument.set_ld_off()
+            self.instrument.set_ld_off_ch6()
 
     def toogle_pid_sharei(self, checked):
 
@@ -1078,7 +1337,7 @@ class PRO8000_GUI(InstrumentWidget):
         # ---------------------------
         # PYQTGPRAPH Functions
         # --------------------------
-    MAX_TIME = 120
+    MAX_TIME = 1800
 
     def update_temperature_plot(self):
 
@@ -1092,17 +1351,22 @@ class PRO8000_GUI(InstrumentWidget):
             self.temp.pop(0)
             self.tec_current.pop(0)
             self.tec_voltage.pop(0)
+            if self.powermeter_graph_created:
+                self.power.pop(0)
 
         # Store data
         self.time.append(elapsed)
         self.temp.append(self.worker.current_temperature)
         self.tec_current.append(self.worker.current_ite_current) # see results in mA
         self.tec_voltage.append(self.worker.current_vte_voltage)
+        self.power.append(self.worker.current_power)
 
         # Update graph
         self.curve_temp.setData(self.time, self.temp)
         self.curve_tec_current.setData(self.time, self.tec_current)
         self.curve_tec_voltage.setData(self.time, self.tec_voltage)
+        if self.powermeter_graph_created :
+            self.curve_power.setData(self.time, self.power)
 
 
     # ------------------------------------
@@ -1343,8 +1607,8 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_44.setText(_translate("PRO8000_GUI", "stop"))
         self.label_45.setText(_translate("PRO8000_GUI", "npoints"))
         self.label_46.setText(_translate("PRO8000_GUI", "Measure"))
-        self.checkBox.setText(_translate("PRO8000_GUI", "power"))
-        self.checkBox_2.setText(_translate("PRO8000_GUI", "temperature"))
+        self.check_powermeter.setText(_translate("PRO8000_GUI", "power"))
+        self.check_powermeter_2.setText(_translate("PRO8000_GUI", "temperature"))
         self.pushButton_13.setText(_translate("PRO8000_GUI", "Apply Sweep"))
         self.label_26.setText(_translate("PRO8000_GUI", "TEMPERATURE SENSOR"))
         self.label_29.setText(_translate("PRO8000_GUI", "Calibration Method"))
@@ -1355,7 +1619,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_10.setText(_translate("PRO8000_GUI", "----- [Ohm]"))
         self.label_11.setText(_translate("PRO8000_GUI", "Set T0 [degC]"))
         self.pushButton_5.setText(_translate("PRO8000_GUI", "Apply Sensor Settings"))
-        self.label_28.setText(_translate("PRO8000_GUI", "DIODE CONTROL"))
+        self.label_laser_control_ch6.setText(_translate("PRO8000_GUI", "DIODE CONTROL Channel 6"))
         self.label_36.setText(_translate("PRO8000_GUI", "Laser Toogle"))
         self.pushButton_10.setText(_translate("PRO8000_GUI", "OFF"))
         self.label_13.setText(_translate("PRO8000_GUI", "Laser Diode Polarity"))

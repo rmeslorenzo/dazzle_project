@@ -153,7 +153,8 @@ class PRO_8000(Equipment):
         self.current_calibration = None
         self.current_sensor = current_sensor
         self.name = "PRO8000"
-        self.laser_enabled = False
+        self.laser_enabled_ch6 = False
+        self.laser_enabled_ch4 = False
 
     class Sensor(StrEnum):
         """Enumerator for temperature sensors for PRO8000."""
@@ -269,33 +270,44 @@ class PRO_8000(Equipment):
         result = self.read_temperature(self.Slot.SLOT6)
         return result
 
-
     # Laser diode
-    def set_ld_on(self):
-        if self.current_slot == self.Slot.SLOT6:
+    def set_ld_on(self, slot:Slot):
+        if self.current_slot == slot:
             self.write(":LASER ON")
         else :
             previous_slot = self.current_slot
-            self.select_slot(self.Slot.SLOT6)
+            self.select_slot(slot)
             self.write(":LASER ON")
             self.select_slot(previous_slot)
 
-        self.laser_enabled = True
+    def set_ld_on_ch6(self):
+        self.set_ld_on(self.Slot.SLOT6)
+        self.laser_enabled_ch6 = True
 
-    def set_ld_off(self):
-        if self.current_slot == self.Slot.SLOT6:
+    def set_ld_on_ch4(self):
+        self.set_ld_on(self.Slot.SLOT4)
+        self.laser_enabled_ch4 = True
+
+    def set_ld_off(self, slot:Slot):
+        if self.current_slot == slot:
             self.write(":LASER OFF")
         else :
             previous_slot = self.current_slot
-            self.select_slot(self.Slot.SLOT6)
+            self.select_slot(slot)
             self.write(":LASER OFF")
             self.select_slot(previous_slot)
 
-        self.laser_enabled = False
+    def set_ld_off_ch6(self):
+        self.set_ld_off(self.Slot.SLOT6)
+        self.laser_enabled_ch6 = False
+
+    def set_ld_off_ch4(self):
+        self.set_ld_off(self.Slot.SLOT4)
+        self.laser_enabled_ch4 = False
 
     def set_diode_current(self, ild : float):
         """Set the current diode current."""
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT4, self.Slot.SLOT6]:
             self.write(":ILD:SET {}".format(ild))
 
     def read_diode_current(self, slot : Slot):
@@ -322,9 +334,10 @@ class PRO_8000(Equipment):
 
     def set_laser_diode_software_current_limit(self, LIMC : float):
         """Set the diode software current limit."""
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT4, self.Slot.SLOT6]:
             self.write(":LIMC:SET {}".format(LIMC))
             print(f"laser current limit set to {LIMC} A")
+
 
     def read_laser_diode_software_current_limit(self):
         """Set the diode software current limit."""

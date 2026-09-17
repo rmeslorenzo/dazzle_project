@@ -10,10 +10,10 @@ from docutils.nodes import address
 from dazzle_project.instruments.equipment import DummyEquipment
 
 class InstrumentWidget(QWidget):
-    def __init__(self, instrument):
+    def __init__(self, instrument, parent=None):
         super().__init__()
         self.instrument = instrument
-
+        self.parent = parent
         self.main_layout = QVBoxLayout(self)
 
 
