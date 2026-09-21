@@ -84,6 +84,7 @@ class EquipmentManager:
                     info.serial_number = parts[2]
                     info.firmware = parts[3]
 
+                print(f"Equipment Manager : instrument {info.model} detected")
                 info.instrument_type, info.instrument_class, info.gui_class = self._guess_type(
                     info.manufacturer,
                     info.model

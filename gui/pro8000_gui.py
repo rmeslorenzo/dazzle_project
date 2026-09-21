@@ -1106,10 +1106,10 @@ class PRO8000_GUI(InstrumentWidget):
         self.tec_current_graph.addLegend()
 
         self.curve_tec_current = self.tec_current_graph.plot(
-            pen=pg.mkPen(color="red", width=2), name="TEC Current [A]"
+            pen=pg.mkPen(color="red", width=2), name="TEC Current [mA]"
         )
         self.curve_tec_voltage = self.tec_current_graph.plot(
-            pen=pg.mkPen(color="yellow", width=2), name="TEC Voltage [V]"
+            pen=pg.mkPen(color="yellow", width=2), name="TEC Voltage [mV]"
         )
         self.time = []
         self.tec_current = []
@@ -1363,10 +1363,10 @@ class PRO8000_GUI(InstrumentWidget):
 
         # Update graph
         self.curve_temp.setData(self.time, self.temp)
-        self.curve_tec_current.setData(self.time, self.tec_current)
-        self.curve_tec_voltage.setData(self.time, self.tec_voltage)
+        self.curve_tec_current.setData(self.time, self.tec_current * 1000) # convert to mili
+        self.curve_tec_voltage.setData(self.time, self.tec_voltage * 1000)
         if self.powermeter_graph_created :
-            self.curve_power.setData(self.time, self.power)
+            self.curve_power.setData(self.time, self.power * 1000)
 
 
     # ------------------------------------
@@ -1381,7 +1381,13 @@ class PRO8000_GUI(InstrumentWidget):
 
         powermeter = None
         powermeter_model = True # if true your using the 2835 otherwise it is the 2936
+        measurement_info = {
+            "collimator" : "PAF2A-11C",
+            "pinhole"    : "P200HK_100um",
+            "detector"   : "818-UV"
+        }
         laser = "25118553-BNT100"
+        path = r"I:\OP\OFERTAS\2024\A3-24-0010 TENSIS H2024 Olivier Saint Pe\6.Resultados\05. Dazzling\Setup\laser"
         print("instantiate powermeter")
         try:
             # powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
@@ -1418,7 +1424,7 @@ class PRO8000_GUI(InstrumentWidget):
         })
         # sweep = ParameterSweep(start, stop, npoints)
 
-        filename = (
+        filename = ( path + "\\" +
             f"{laser}_ld_sweep_{model}_"
             f"{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
         )
@@ -1439,7 +1445,7 @@ class PRO8000_GUI(InstrumentWidget):
                 "tec_voltage_std_A",
                 "power_avg_W",
                 "power_std_W"
-            ])
+            ] + list(measurement_info.keys()))
 
             #
             # Go to LD channel
@@ -1550,7 +1556,7 @@ class PRO8000_GUI(InstrumentWidget):
                     tec_voltage_std,
                     power_avg,
                     power_std
-                ])
+                ] + list(measurement_info.values()))
                 print(
                     f"I={sw["current"]:.4f}A "
                     f"T={temp_avg:.3f}+-{temp_std:.3f} °C "
@@ -1607,7 +1613,7 @@ class PRO8000_GUI(InstrumentWidget):
         self.label_44.setText(_translate("PRO8000_GUI", "stop"))
         self.label_45.setText(_translate("PRO8000_GUI", "npoints"))
         self.label_46.setText(_translate("PRO8000_GUI", "Measure"))
-        self.check_powermeter.setText(_translate("PRO8000_GUI", "power"))
+        self.check_powermeter.setText(_translate("PRO8000_GUI", "plot power"))
         self.check_powermeter_2.setText(_translate("PRO8000_GUI", "temperature"))
         self.pushButton_13.setText(_translate("PRO8000_GUI", "Apply Sweep"))
         self.label_26.setText(_translate("PRO8000_GUI", "TEMPERATURE SENSOR"))

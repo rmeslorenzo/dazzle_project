@@ -50,7 +50,10 @@ class NEWPORT_2835_C(Equipment):
     def set_wavelength(self, channel: Channel, wavelength : int):
         self.write("LAMBDA_{} {}".format(channel.value, wavelength))
     def get_wavelength(self, channel : Channel):
-        self.query(f"LAMBDA_{channel.value}?")
+        self.clear()
+        self.write(f"LAMBDA_{channel.value}?")
+        sleep(0.1)
+        float(self.read())
     def set_mode(self, channel : Channel, mode : MODE):
         self.write("MODE_{} {}".format(channel.value, mode.value))
     def get_mode(self, channel : Channel):
@@ -83,7 +86,11 @@ class NEWPORT_2835_C(Equipment):
         self.write(f"RUN_{channel.value}")
 
     def read_single_channel(self, channel : Channel):
-        result = self.query(f"R_{channel.value}?")
+        self.clear()
+        sleep(0.05)
+        self.write(f"R_{channel.value}?")
+        sleep(0.1)
+        result = self.read()
 
         try :
             return float(result)
@@ -105,7 +112,6 @@ class NEWPORT_2835_C(Equipment):
 
 if __name__ == "__main__" :
     import pyvisa
-    from ThorlabsPM100 import ThorlabsPM100
     rm = pyvisa.ResourceManager()
     print(rm.list_resources())
 

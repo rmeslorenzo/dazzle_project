@@ -218,6 +218,7 @@ class MainGUI(QtWidgets.QMainWindow):
             # ---------------------------------------------
             # Create instrument
             # ---------------------------------------------
+            print(f"connecting to instrument {instrument_model}")
 
             instrument = self.create_instrument(
                 connection_type,

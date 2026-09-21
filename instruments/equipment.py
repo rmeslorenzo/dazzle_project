@@ -40,6 +40,7 @@ class DummyEquipment():
 class Equipment(ABC):
 
     def __init__(self, resource_name, serial_number=None , manufacturer="", visa_resource_manager=None):
+        self.resource_name = resource_name
         self.manufacturer = manufacturer
         self.serial_number = serial_number
         self.name = "equipment"
@@ -87,5 +88,12 @@ class Equipment(ABC):
         sleep(0.1)
         return self.instrument.query(command)
 
+    def clear(self):
+        return self.instrument.clear()
+
     def close(self):
         self.instrument.close()
+        self.connected = False
+
+    def reconnect(self):
+        self.rm.open_resource(self.resource_name)

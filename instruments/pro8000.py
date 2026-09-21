@@ -153,6 +153,7 @@ class PRO_8000(Equipment):
         self.current_calibration = None
         self.current_sensor = current_sensor
         self.name = "PRO8000"
+        self.tec_enabled = False
         self.laser_enabled_ch6 = False
         self.laser_enabled_ch4 = False
 
@@ -195,9 +196,11 @@ class PRO_8000(Equipment):
     def tec_on(self):
         """TEC ON."""
         self.write(":TEC ON")
+        self.tec_enabled = True
     def tec_off(self):
         """TEC OFF."""
         self.write(":TEC OFF")
+        self.tec_enabled = False
 
     def set_tec_software_limit(self, limt):
         """Set the current software limit."""
