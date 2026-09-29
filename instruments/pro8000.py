@@ -153,7 +153,7 @@ class PRO_8000(Equipment):
         self.current_calibration = None
         self.current_sensor = current_sensor
         self.name = "PRO8000"
-        self.tec_enabled = False
+        self.tec_enabled = self.check_if_tec_is_enabled()
         self.laser_enabled_ch6 = False
         self.laser_enabled_ch4 = False
 
@@ -193,6 +193,16 @@ class PRO_8000(Equipment):
         return self.query(":SYST:ERR?").strip()
 
     # TEC
+    def check_if_tec_is_enabled(self):
+        """returns True if TEC is enabled."""
+        out = self.query(":TEC?")
+        if "ON" in out:
+            return True
+        elif "OFF" in out:
+            return False
+        else:
+            raise ValueError(f"for query :TEC? wrong return {out}")
+
     def tec_on(self):
         """TEC ON."""
         self.write(":TEC ON")
@@ -468,8 +478,11 @@ class PRO_8000(Equipment):
     def read_p_share(self):
         try :
 
-            print("query for pshare ", self.query(":SHAREP:SET?"))
-            out = self.query(":SHAREP:SET?")
+            print("query for pshare ")
+            self.clear()
+            self.write(":SHAREP:SET?")
+            sleep(0.1)
+            out = self.read()
             if ":SHAREP:SET " in out:
                 result = float(out.strip(":SHAREP:SET ")[:-1])
             else :
@@ -480,9 +493,11 @@ class PRO_8000(Equipment):
 
     def read_d_share(self):
         try :
-            print("query for dshare ", self.query(":SHARED:SET?"))
+            print("query for dshare ")
+            self.clear()
+            self.write(":SHARED:SET?")
             sleep(0.1)
-            out = self.query(":SHARED:SET?")
+            out = self.read()
             if ":SHARED:SET " in out:
                 result = float(out.strip(":SHARED:SET ")[:-1])
             else:
@@ -493,7 +508,10 @@ class PRO_8000(Equipment):
 
     def read_i_share(self):
         try :
-            out = self.query(":SHAREI:SET?")
+            self.clear()
+            self.write(":SHAREI:SET?")
+            sleep(0.1)
+            out = self.read()
             result = float(out.strip(":SHAREI:SET ")[:-1])
             return result
         except Exception as e:

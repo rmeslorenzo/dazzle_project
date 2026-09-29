@@ -16,6 +16,10 @@ class InstrumentWidget(QWidget):
         self.parent = parent
         self.main_layout = QVBoxLayout(self)
 
+    def set_default(self):
+        """Set default values when the gui is constructed."""
+        pass
+
 
 
 if __name__ == "__main__":

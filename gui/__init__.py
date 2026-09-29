@@ -6,6 +6,15 @@ INSTRUMENT_GUI_CLASSES = {
     "2835-C" : NEWPORT_2835_GUI,
 }
 
+PRO8000_DEFAULT_VALUES = {
+    "set_temperature" : 25,
+    "tec_current_limit" : 0.9,
+    "pid"   : [1.5, 0.1, 1.1],
+    "slot6_enable" : False,
+    "polarity_ch6" : "AG"
+}
+
+
 def get_instrument_gui_class(model_name):
 
     return INSTRUMENT_GUI_CLASSES.get(model_name.upper())
