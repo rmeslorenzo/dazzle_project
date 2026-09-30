@@ -11,7 +11,7 @@ PRO8000_DEFAULT_VALUES = {
     "tec_current_limit" : 0.9,
     "pid"   : [1.5, 0.1, 1.1],
     "slot6_enable" : False,
-    "polarity_ch6" : "AG"
+    "polarity_ch6" : ["AG", "AG"] # [0] : pd polarity, [1] : ld polarity
 }
 
 

@@ -33,6 +33,15 @@ class AcquisitionMode(Enum):
     MANUAL_CH6 = 2
     AUTO = 3
 
+# ---------------------------------------
+#   LD Controler GUI
+#----------------------------------------
+# Description :
+# Gui for the Laser/Diode drivers
+# There are two in the pro8000 device
+# On the Slot 4 and 6
+# ---------------------------------------
+
 class LDControlerWidget(InstrumentWidget):
     def __init__(self, instrument, parent, channel : int = 0):
         super().__init__(instrument, parent)
@@ -173,6 +182,17 @@ class LDControlerWidget(InstrumentWidget):
     def set_diode_current_limit(self, value):
         self.parent.instrument.set_laser_diode_software_current_limit(value)
 
+# ----------------------------------
+#      TEC CONTROLER GUI
+# ----------------------------------
+# Description :
+# GUI for the TEC Controler located
+# on the slot 0 of the pro8000
+# device. Set the temperature and
+# read the temperature of the laser
+# and has PID functionality to
+# configure temperature settling
+# ----------------------------------
 
 
 class MeasurementWorker(QtCore.QObject):
@@ -218,9 +238,6 @@ class MeasurementWorker(QtCore.QObject):
     apply_tec_soft_current_limit_changed   = QtCore.pyqtSignal(object)
 
     check_powermeter_ready                  = QtCore.pyqtSignal(bool)
-
-
-
 
     def __init__(self):
         super().__init__()
@@ -335,13 +352,20 @@ class MeasurementWorker(QtCore.QObject):
     @QtCore.pyqtSlot()
     def read_polarities(self):
         # print("read pd polarity")
-        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
-            pd_polarity = self.instrument.read_pd_polarity()
-            ld_polarity = self.instrument.read_laser_polarity()
-            # Only emit if polarity changed
-            # print("WORKER:", repr(polarity))
-            # print(type(polarity), repr(polarity))
-            self.read_polarities_ready.emit(pd_polarity, ld_polarity)
+        previous_slot = None
+        
+        if self.instrument.current_slot != self.instrument.Slot.SLOT6:
+
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(self.instrument.Slot.SLOT6)
+
+        pd_polarity = self.instrument.read_pd_polarity()
+        ld_polarity = self.instrument.read_laser_polarity()
+
+        if previous_slot is not None:
+            self.instrument.select_slot(previous_slot)
+
+        self.read_polarities_ready.emit(pd_polarity, ld_polarity)
 
     @QtCore.pyqtSlot()
     def read_ld_soft_current_limit(self):
@@ -434,16 +458,25 @@ class MeasurementWorker(QtCore.QObject):
         if self.previous_pd_polarity != pd_pol or self.previous_ld_polarity != ld_pol or not self.previous_ld_polarity in ["AG, CG"] or not self.previous_pd_polarity in ["AG, CG"]:
 
             # Polarity controls are on slot 6
-            if self.instrument.current_slot == self.instrument.Slot.SLOT6 :
+            if self.instrument.current_slot != self.instrument.Slot.SLOT6 :
 
-                pd_polarity = self.instrument.Polarity(pd_pol)
-                self.instrument.set_pd_polarity(pd_polarity)
-                ld_polarity = self.instrument.Polarity(ld_pol)
-                self.instrument.set_ld_polarity(ld_polarity)
+                previous_slot = self.instrument.current_slot
+                self.instrument.select_slot(self.instrument.Slot.SLOT6)
 
-                self.previous_pd_polarity = pd_pol
-                self.previous_ld_polarity = ld_pol
-                self.polarity_applied_ready.emit(pd_pol, ld_pol)
+            else :
+                previous_slot = self.instrument.Slot.SLOT6
+
+            pd_polarity = self.instrument.Polarity(pd_pol)
+            self.instrument.set_pd_polarity(pd_polarity)
+            ld_polarity = self.instrument.Polarity(ld_pol)
+            self.instrument.set_ld_polarity(ld_polarity)
+
+            self.previous_pd_polarity = pd_pol
+            self.previous_ld_polarity = ld_pol
+            self.polarity_applied_ready.emit(pd_pol, ld_pol)
+
+            # return to previous slot
+            self.instrument.select_slot(previous_slot)
 
     @QtCore.pyqtSlot(float)
     def apply_diode_current_ch6(self, current_val):
@@ -1127,12 +1160,7 @@ class PRO8000_GUI(InstrumentWidget):
         #       QTIMER
         # --------------------
         self.timer = QtCore.QTimer()
-        # self.timer.timeout.connect(self.update_temperature_plot)
-        # self.timer.timeout.connect(self.worker.read_temperature)
         self.timer.timeout.connect(self.periodic_update)
-        # self.timer.timeout.connect(self.worker.read_diode_current)
-        # self.timer.timeout.connect(self.worker.read_vld_voltage)
-        # self.timer.timeout.connect(self.worker.read_hard_current_limit)
 
         # -------------------------
         #      DEFAULT VALUES
@@ -1168,21 +1196,16 @@ class PRO8000_GUI(InstrumentWidget):
                 self.worker.apply_tec_current_soft_limit(def_val)
                 self.doubleSpinBox_2.setValue(def_val)
                 sleep(0.2)
+            elif "polarity_ch6" in def_key:
+                self.instrument.set_i_share_on()
+                sleep(0.2)
+                self.worker.apply_polarities(def_val[0], def_val[1])
             elif "pid" in def_key:
                 self.worker.apply_pid(def_val[0], def_val[1], def_val[2])
                 sleep(0.2)
                 self.doubleSpinBox_3.setValue(def_val[0])
                 self.doubleSpinBox_4.setValue(def_val[1])
                 self.doubleSpinBox_5.setValue(def_val[2])
-            # elif "polarity_ch6" in def_key :
-            #     previous_slot = self.instrument.current_slot
-            #     self.instrument.select_slot(self.instrument.Slot.SLOT6)
-            #     self.worker.apply_polarities(def_val, def_val)
-            #     sleep(0.2)
-            #     self.instrument.select_slot(previous_slot)
-            #     self.comboBox_3.setCurrentText(def_val)
-            #     self.comboBox_4.setCurrentText(def_val)
-
 
 
 
