@@ -85,8 +85,10 @@ class Equipment(ABC):
         return self.instrument.read()
 
     def query(self, command):
+        out = self.instrument.query(command)
         sleep(0.1)
-        return self.instrument.query(command)
+        return out
+
 
     def clear(self):
         return self.instrument.clear()

@@ -198,14 +198,16 @@ class LDControlerWidget(InstrumentWidget):
 class MeasurementWorker(QtCore.QObject):
 
     read_temperature_ready             = QtCore.pyqtSignal(float)
+    read_temperature_requested         = QtCore.pyqtSignal()
     read_temperature_sensor_ready      = QtCore.pyqtSignal(str, str, float)
-    read_pid_requested                 = QtCore.pyqtSignal(bool)
+    read_pid_requested                 = QtCore.pyqtSignal()
     read_pid_settings_ready            = QtCore.pyqtSignal(float, float, float)
     read_vte_voltage_ready             = QtCore.pyqtSignal(float)
     read_itec_current_ready            = QtCore.pyqtSignal(float)
     read_polarities_ready            = QtCore.pyqtSignal(str, str)
     read_diode_current_ready           = QtCore.pyqtSignal(float)
     read_soft_current_limit_ready     = QtCore.pyqtSignal(float)
+    read_tec_requested                = QtCore.pyqtSignal()
     read_tec_soft_current_limit_ready = QtCore.pyqtSignal(float)
     read_hardware_current_limit_ready = QtCore.pyqtSignal(float)
     read_vld_ready                    = QtCore.pyqtSignal(float)
@@ -353,7 +355,7 @@ class MeasurementWorker(QtCore.QObject):
     def read_polarities(self):
         # print("read pd polarity")
         previous_slot = None
-        
+
         if self.instrument.current_slot != self.instrument.Slot.SLOT6:
 
             previous_slot = self.instrument.current_slot
@@ -1021,6 +1023,11 @@ class PRO8000_GUI(InstrumentWidget):
 
         self.worker.moveToThread(self.worker_thread)
         self.worker.read_temperature_ready.connect(self.update_temperature)
+
+        # read requests
+        self.worker.read_temperature_requested.connect(self.worker.read_temperature)
+        self.worker.read_tec_requested.connect(self.worker.read_tec)
+
         self.worker.read_pid_settings_ready.connect(self.update_pid)
         self.worker.read_vte_voltage_ready.connect(self.update_tec_voltage_slot1)
         self.worker.read_itec_current_ready.connect(self.update_tec_current_slot1)
@@ -1197,10 +1204,16 @@ class PRO8000_GUI(InstrumentWidget):
                 self.doubleSpinBox_2.setValue(def_val)
                 sleep(0.2)
             elif "polarity_ch6" in def_key:
-                self.instrument.set_i_share_on()
                 sleep(0.2)
                 self.worker.apply_polarities(def_val[0], def_val[1])
+                self.comboBox_3.setCurrentText(def_val[0])
+                self.comboBox_4.setCurrentText(def_val[1])
+            elif "slot6_enable" in def_key:
+                sleep(0.2)
+                self.toogle_ld(def_val)
             elif "pid" in def_key:
+                self.instrument.set_i_share_on()
+                sleep(0.2)
                 self.worker.apply_pid(def_val[0], def_val[1], def_val[2])
                 sleep(0.2)
                 self.doubleSpinBox_3.setValue(def_val[0])
@@ -1249,8 +1262,8 @@ class PRO8000_GUI(InstrumentWidget):
             self.worker.auto_read_cycle()
 
         elif self.acquisition_mode == AcquisitionMode.MANUAL_CH1:
-            self.worker.read_temperature()
-            self.worker.read_tec()
+            self.worker.read_temperature_requested.emit()
+            self.worker.read_tec_requested.emit()
 
         elif self.acquisition_mode == AcquisitionMode.MANUAL_CH6:
             self.worker.read_diode_current()
@@ -1433,14 +1446,14 @@ class PRO8000_GUI(InstrumentWidget):
         self.temp.append(self.worker.current_temperature)
         self.tec_current.append(self.worker.current_ite_current * 1000) # see results in mA
         self.tec_voltage.append(self.worker.current_vte_voltage * 1000)
-        self.power.append(self.worker.current_power)
+        self.power.append(self.worker.current_power * 1000)
 
         # Update graph
         self.curve_temp.setData(self.time, self.temp)
         self.curve_tec_current.setData(self.time, self.tec_current ) # convert to mili
         self.curve_tec_voltage.setData(self.time, self.tec_voltage )
         if self.powermeter_graph_created :
-            self.curve_power.setData(self.time, self.power * 1000)
+            self.curve_power.setData(self.time, self.power)
 
 
     # ------------------------------------
@@ -1457,7 +1470,7 @@ class PRO8000_GUI(InstrumentWidget):
         powermeter_model = True # if true your using the 2835 otherwise it is the 2936
         measurement_info = {
             "collimator" : "PAF2A-11C",
-            "pinhole"    : "P200HK_100um",
+            "pinhole"    : "P100HK_100um",
             "detector"   : "818-UV"
         }
         laser = "25118553-BNT100"
@@ -1531,9 +1544,12 @@ class PRO8000_GUI(InstrumentWidget):
             self.toogle_ld(True)
 
             # number of sampling for each measurement
-            WAIT = 10
-            sleep(WAIT)
+            WAIT_SETTLING = 300
+            WAIT_MEAS     = 10
             N_MEASUREMENTS = 10
+
+            print(f"waiting {WAIT_SETTLING} s for settling")
+            sleep(WAIT_SETTLING)
 
             for sw in sweep:
                 print(f"Setting current {sw["current"]:.4f} A")
@@ -1549,7 +1565,7 @@ class PRO8000_GUI(InstrumentWidget):
                 # Wait for settling
                 #
                 QtWidgets.QApplication.processEvents()
-                time.sleep(WAIT)
+                time.sleep(WAIT_MEAS)
                 model = ""
                 temperatures = []
                 powers = []

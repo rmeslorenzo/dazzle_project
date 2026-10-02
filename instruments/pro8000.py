@@ -508,6 +508,7 @@ class PRO_8000(Equipment):
 
     def read_i_share(self):
         try :
+            print("query for I share")
             self.clear()
             self.write(":SHAREI:SET?")
             sleep(0.1)

@@ -39,3 +39,4 @@ class XimeaCamera(Camera):
         self.stop_acquisition()
 
         return np_data
+
