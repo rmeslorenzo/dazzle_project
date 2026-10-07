@@ -19,6 +19,7 @@ import statistics
 import csv
 import datetime
 
+
 from dazzle_project.gui.instrument_gui import InstrumentWidget
 from dazzle_project.instruments.pro8000 import PRO_8000
 from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
@@ -53,13 +54,19 @@ class LDControlerWidget(InstrumentWidget):
             self.laser_on  = self.instrument.set_ld_on_ch4
             self.laser_off = self.instrument.set_ld_off_ch4
         else:
-            raise ValueError("Wrong channel input for LD Controller.")
+            raise ValueError("Wrong channel input for LD Controller. Can only be 4 or 6")
+
         if self.slot_number == 6:
             self.apply_current_requested = self.parent.worker.apply_diode_current_ch6_requested
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch6_limit_requested
+
         elif self.slot_number == 4:
             self.apply_current_requested = self.parent.worker.apply_diode_current_ch4_requested
+            self.apply_current_limit_requested = self.parent.worker.apply_diode_current_ch4_limit_requested
         else:
             raise ValueError("Wrong channel input for LD Controller.")
+
+        print(f"LDController channel {self.slot_number} created")
 
         # Shape Box
         diode_control_label = QtWidgets.QLabel(parent=self)
@@ -129,15 +136,12 @@ class LDControlerWidget(InstrumentWidget):
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel("Soft Current Limit Imax [A]"))
         self.limit_spin = QtWidgets.QDoubleSpinBox()
-        self.limit_spin.setDecimals(2)
-        self.limit_spin.setRange(0.0, 10.0)
+        self.limit_spin.setDecimals(4)
+        self.limit_spin.setRange(0.0, 4)
         row.addWidget(self.limit_spin)
         self.btn_apply_current_limit = QtWidgets.QPushButton("Apply Limit Current")
         row.addWidget(self.btn_apply_current_limit)
         self.main_layout.addLayout(row)
-
-        self.btn_apply_polarity = QtWidgets.QPushButton("Apply Polarity")
-        self.main_layout.addWidget(self.btn_apply_polarity)
 
         # Read Hard Limit
         row = QtWidgets.QHBoxLayout()
@@ -160,6 +164,7 @@ class LDControlerWidget(InstrumentWidget):
         # --------------------------------
         self.laser_toogle.clicked.connect(self.toogle_ld)
         self.btn_apply_current.clicked.connect(lambda: self.apply_current_requested.emit(self.current_spin.value()))
+        self.btn_apply_polarity.clicked.connect(lambda: self.parent.worker.apply_polarity_requested.emit(self.pd_polarity.currentText(), self.ld_polarity.currentText(), self.slot_number))
         # self.laser_current_limit_button.clicked.connect(lambda: self.parent.worker.apply_diode_current_limit_requested.emit(
         #         self.limit_spin.value()))
 
@@ -181,6 +186,7 @@ class LDControlerWidget(InstrumentWidget):
 
     def set_diode_current_limit(self, value):
         self.parent.instrument.set_laser_diode_software_current_limit(value)
+
 
 # ----------------------------------
 #      TEC CONTROLER GUI
@@ -204,13 +210,17 @@ class MeasurementWorker(QtCore.QObject):
     read_pid_settings_ready            = QtCore.pyqtSignal(float, float, float)
     read_vte_voltage_ready             = QtCore.pyqtSignal(float)
     read_itec_current_ready            = QtCore.pyqtSignal(float)
-    read_polarities_ready            = QtCore.pyqtSignal(str, str)
-    read_diode_current_ready           = QtCore.pyqtSignal(float)
+    read_polarities_ready              = QtCore.pyqtSignal(str, str, int)
+    read_diode_current_ready_old       = QtCore.pyqtSignal(float)
+    read_diode_current_ready           = QtCore.pyqtSignal(float, int)
     read_soft_current_limit_ready     = QtCore.pyqtSignal(float)
     read_tec_requested                = QtCore.pyqtSignal()
     read_tec_soft_current_limit_ready = QtCore.pyqtSignal(float)
-    read_hardware_current_limit_ready = QtCore.pyqtSignal(float)
-    read_vld_ready                    = QtCore.pyqtSignal(float)
+    read_hardware_current_limit_ready = QtCore.pyqtSignal(float, int)
+    read_vld_ready                    = QtCore.pyqtSignal(float, int)
+
+    # For LD Controller class
+    read_vld_requested                = QtCore.pyqtSignal(int)
 
     read_powermeter_ready             = QtCore.pyqtSignal(float)
 
@@ -219,14 +229,14 @@ class MeasurementWorker(QtCore.QObject):
     apply_temperature_requested         = QtCore.pyqtSignal(float)
     apply_pid_requested                 = QtCore.pyqtSignal(float, float, float)
     apply_tec_soft_current_limit_requested  = QtCore.pyqtSignal(float)
-    apply_polarity_requested            = QtCore.pyqtSignal(str, str)
+    apply_polarity_requested            = QtCore.pyqtSignal(str, str, int)
     apply_diode_current_ch6_requested       = QtCore.pyqtSignal(float)
     apply_diode_current_ch6_limit_requested = QtCore.pyqtSignal(float)
     apply_diode_current_ch4_requested       = QtCore.pyqtSignal(float)
     apply_diode_current_ch4_limit_requested = QtCore.pyqtSignal(float)
     apply_sweep_requested               = QtCore.pyqtSignal(float, float, int)
 
-    polarity_applied_ready             =  QtCore.pyqtSignal(str, str)
+    polarity_applied_ready             =  QtCore.pyqtSignal(int)
     apply_diode_current_ch6_ready          =  QtCore.pyqtSignal(float)
     apply_diode_current_ch4_ready      = QtCore.pyqtSignal(float)
     apply_tec_soft_current_limit_ready     =  QtCore.pyqtSignal(float)
@@ -244,6 +254,7 @@ class MeasurementWorker(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.instrument = None
+        self.active_channels = []
         self.powermeter = None
         self.queue = queue.Queue()
         self.next_slot = 0
@@ -351,15 +362,16 @@ class MeasurementWorker(QtCore.QObject):
 
 
     # DIODE
-    @QtCore.pyqtSlot()
-    def read_polarities(self):
+    @QtCore.pyqtSlot(int)
+    def read_polarities(self, channel: int):
         # print("read pd polarity")
+        laser_slot = self.instrument.Slot(channel)
         previous_slot = None
 
-        if self.instrument.current_slot != self.instrument.Slot.SLOT6:
+        if self.instrument.current_slot != laser_slot:
 
             previous_slot = self.instrument.current_slot
-            self.instrument.select_slot(self.instrument.Slot.SLOT6)
+            self.instrument.select_slot(laser_slot)
 
         pd_polarity = self.instrument.read_pd_polarity()
         ld_polarity = self.instrument.read_laser_polarity()
@@ -367,7 +379,7 @@ class MeasurementWorker(QtCore.QObject):
         if previous_slot is not None:
             self.instrument.select_slot(previous_slot)
 
-        self.read_polarities_ready.emit(pd_polarity, ld_polarity)
+        self.read_polarities_ready.emit(pd_polarity, ld_polarity, channel)
 
     @QtCore.pyqtSlot()
     def read_ld_soft_current_limit(self):
@@ -375,26 +387,46 @@ class MeasurementWorker(QtCore.QObject):
             value = self.instrument.read_laser_diode_software_current_limit()
             self.read_soft_current_limit_ready.emit(value)
 
-    @QtCore.pyqtSlot()
-    def read_hard_current_limit(self):
-        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
+    @QtCore.pyqtSlot(int)
+    def read_hard_current_limit(self, channel):
+        if self.instrument.current_slot in [self.instrument.Slot.SLOT6, self.instrument.Slot.SLOT4]:
             value = self.instrument.read_hardware_current_limit()
-            self.read_hardware_current_limit_ready.emit(value)
+            self.read_hardware_current_limit_ready.emit(value, channel)
 
     @QtCore.pyqtSlot()
-    def read_diode_current(self):
+    def read_diode_current_old(self):
         # print(f"current channel is {self.instrument.current_slot}")
         if self.instrument.current_slot == self.instrument.Slot.SLOT6:
             # print("read diode current")
             value = self.instrument.read_diode_current_slot6()
             # print(f"diode current : {value}")
-            self.read_diode_current_ready.emit(value)
+            self.read_diode_current_ready_old.emit(value)
+
+    # same method for LDController class
 
     @QtCore.pyqtSlot()
-    def read_vld_voltage(self):
-        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
-            value = self.instrument.read_laser_diode_voltage_slot6()
-            self.read_vld_ready.emit(value)
+    def read_diode_current(self, slot_num : int):
+
+        # get selected slot
+        laser_slot = self.instrument.Slot(slot_num)
+        # print(f"LDController:read_diode_current: Slot is {laser_slot.value}")
+        if self.instrument.current_slot == laser_slot:
+            # print("LDController: read diode current")
+            value = self.instrument.read_diode_current(laser_slot)
+            # print(f"LDController: diode current : {value}")
+            self.read_diode_current_ready.emit(value, slot_num)
+
+    @QtCore.pyqtSlot(int)
+    def read_vld_voltage(self, channel:int):
+        laser_slot = self.instrument.Slot(channel)
+        # print(f"reading slot {laser_slot.name} of channel {channel}")
+        if self.instrument.current_slot in [self.instrument.Slot.SLOT6, self.instrument.Slot.SLOT4]:
+            if channel == 6:
+                value = self.instrument.read_laser_diode_voltage_slot6()
+            else :
+                value = self.instrument.read_laser_diode_voltage(laser_slot)
+
+            self.read_vld_ready.emit(value, channel)
 
     @QtCore.pyqtSlot()
     def read_powermeter(self):
@@ -412,10 +444,18 @@ class MeasurementWorker(QtCore.QObject):
             self.instrument.Slot.SLOT6
         )
 
-        self.read_diode_current()
-        self.read_vld_voltage()
-        self.read_hard_current_limit()
-        self.read_polarities()
+        self.read_diode_current(6)
+        self.read_vld_voltage(6)
+        self.read_hard_current_limit(6)
+
+        for ch in self.active_channels:
+            if ch!=6:
+
+                self.instrument.select_slot(self.instrument.Slot(ch))
+                self.read_diode_current(ch)
+                self.read_vld_voltage(ch)
+                self.read_hard_current_limit(ch)
+
 
     @QtCore.pyqtSlot()
     def auto_read_cycle(self):
@@ -453,17 +493,18 @@ class MeasurementWorker(QtCore.QObject):
     # -----------------
     #   apply values
     # -----------------
-    @QtCore.pyqtSlot(str, str)
-    def apply_polarities(self, pd_pol, ld_pol):
+    @QtCore.pyqtSlot(str, str, int)
+    def apply_polarities(self, pd_pol, ld_pol, channel : int = 6):
 
-        print(f"applying polarities: {pd_pol} and {ld_pol}")
+        laser_slot = self.instrument.Slot(channel)
+        print(f"applying polarities: {pd_pol} and {ld_pol} on Slot {channel}")
         if self.previous_pd_polarity != pd_pol or self.previous_ld_polarity != ld_pol or not self.previous_ld_polarity in ["AG, CG"] or not self.previous_pd_polarity in ["AG, CG"]:
 
             # Polarity controls are on slot 6
-            if self.instrument.current_slot != self.instrument.Slot.SLOT6 :
+            if self.instrument.current_slot != laser_slot :
 
                 previous_slot = self.instrument.current_slot
-                self.instrument.select_slot(self.instrument.Slot.SLOT6)
+                self.instrument.select_slot(laser_slot)
 
             else :
                 previous_slot = self.instrument.Slot.SLOT6
@@ -475,7 +516,7 @@ class MeasurementWorker(QtCore.QObject):
 
             self.previous_pd_polarity = pd_pol
             self.previous_ld_polarity = ld_pol
-            self.polarity_applied_ready.emit(pd_pol, ld_pol)
+            self.polarity_applied_ready.emit(channel)
 
             # return to previous slot
             self.instrument.select_slot(previous_slot)
@@ -1034,6 +1075,7 @@ class PRO8000_GUI(InstrumentWidget):
 
         self.worker.read_polarities_ready.connect(self.update_polarities)
         self.worker.polarity_applied_ready.connect(self.worker.read_polarities)
+        self.worker.read_diode_current_ready_old.connect(self.update_diode_current)
         self.worker.read_diode_current_ready.connect(self.update_diode_current)
         self.worker.read_vld_ready.connect(self.update_vld)
         self.worker.read_tec_soft_current_limit_ready.connect(self.update_tec_soft_current_limit)
@@ -1074,7 +1116,7 @@ class PRO8000_GUI(InstrumentWidget):
             lambda: self.worker.apply_diode_current_ch6_requested.emit(self.doubleSpinBox_10.value()))
         self.pushButton_9.clicked.connect(
             lambda: self.worker.apply_polarity_requested.emit(self.comboBox_4.currentText(),
-                                                              self.comboBox_3.currentText()))
+                                                              self.comboBox_3.currentText(), 6))
         self.pushButton_3.clicked.connect(
             lambda: self.worker.apply_temperature_requested.emit(self.doubleSpinBox.value()))
         self.pushButton_5.clicked.connect(self.apply_sensor_settings)
@@ -1092,10 +1134,13 @@ class PRO8000_GUI(InstrumentWidget):
         self.pushButton_13.clicked.connect(self.measure_current_sweep)
 
         # ------------------------------------
-        #    LD CONTROLER CHANNLE 4
+        #    LD CONTROLER CHANNEL 4
         # ------------------------------------
-        self.ld_controler_ch4 = LDControlerWidget(instrument=self.instrument, parent=self, channel=4)
-        self.gridLayout.addWidget(self.ld_controler_ch4, 1, 1, 1, 1)
+        try:
+            self.ld_controler_ch4 = LDControlerWidget(instrument=self.instrument, parent=self, channel=4)
+            self.gridLayout.addWidget(self.ld_controler_ch4, 1, 1, 1, 1)
+        finally:
+            self.worker.active_channels.append(self.ld_controler_ch4.slot_number)
 
         # --------------------------------
         #    WIDGET Modifications
@@ -1205,7 +1250,7 @@ class PRO8000_GUI(InstrumentWidget):
                 sleep(0.2)
             elif "polarity_ch6" in def_key:
                 sleep(0.2)
-                self.worker.apply_polarities(def_val[0], def_val[1])
+                self.worker.apply_polarities(def_val[0], def_val[1], channel=6)
                 self.comboBox_3.setCurrentText(def_val[0])
                 self.comboBox_4.setCurrentText(def_val[1])
             elif "slot6_enable" in def_key:
@@ -1266,9 +1311,18 @@ class PRO8000_GUI(InstrumentWidget):
             self.worker.read_tec_requested.emit()
 
         elif self.acquisition_mode == AcquisitionMode.MANUAL_CH6:
-            self.worker.read_diode_current()
-            self.worker.read_vld_voltage()
-            self.worker.read_hard_current_limit()
+            self.worker.read_diode_current_old()
+            self.worker.read_vld_voltage(6)
+            self.worker.read_hard_current_limit(6)
+
+            # for ch in self.worker.active_channels:
+            #     laser_slot = self.instrument.Slot(ch)
+            #     self.instrument.select_slot(laser_slot)
+            #     self.worker.read_diode_current(ch)
+            #     self.worker.read_vld_voltage(ch)
+            #     self.worker.read_hard_current_limit(ch)
+            #
+            # self.instrument.select_slot(self.instrument.Slot(6))
 
         if self.powermeter_detected and self.powermeter_graph_created and self.worker.powermeter_created:
             self.worker.read_powermeter()
@@ -1390,22 +1444,36 @@ class PRO8000_GUI(InstrumentWidget):
     def update_resistance_sensor(self, result):
         self.label_10.setText(f"{result:.2f} [Ohm]")
 
-    def update_polarities(self, pd_pol, ld_pol):
+    def update_polarities(self, pd_pol, ld_pol, channel=6):
         # print("update pd polarity " + result)
         self.label_35.setText(pd_pol)
         self.label_33.setText(ld_pol)
+        if channel == 4:
+            self.ld_controler_ch4.ld_read.setText(ld_pol)
+            self.ld_controler_ch4.pd_read.setText(pd_pol)
 
-    def update_diode_current(self, result):
-        self.label_24.setText(f"Current : {result:.4f} [A]")
 
-    def update_hard_current_limit(self, result):
-        self.label_21.setText(f"{result:.4f} [A]")
+    def update_diode_current(self, result, channel=6):
+        # print("Updating read diode current in the GUI channel", channel)
+        if channel == 6:
+            self.label_24.setText(f"Current : {result:.4f} [A]")
+        elif channel == 4:
+            self.ld_controler_ch4.current_read.setText(f"Current : {result:.4f} [A]")
+
+    def update_hard_current_limit(self, result, channel):
+        if channel==6:
+            self.label_21.setText(f"{result:.4f} [A]")
+        elif channel==4:
+            self.ld_controler_ch4.hard_limit_label.setText(f"{result:.4f} [A]")
 
     # def update_diode_current_limit(self, result):
     #     self.label_38.setText(f"limit read: {result:.4f} [A]")
 
-    def update_vld(self, result):
-        self.label_23.setText(f"{result:.4f} [V]")
+    def update_vld(self, result, channel):
+        if channel == 6:
+            self.label_23.setText(f"{result:.4f} [V]")
+        elif channel == 4:
+            self.ld_controler_ch4.vld_label.setText(f"{result:.4f} [V]")
 
     def update_all(self, temperature, tec_voltage, itec_current, polarity):
         self.update_temperature(temperature)
@@ -1560,7 +1628,7 @@ class PRO8000_GUI(InstrumentWidget):
                 self.instrument.set_diode_current(sw["current"])
                 read_ld_current = self.instrument.read_diode_current_slot6()
                 # Update laser current in gui
-                self.worker.read_diode_current_ready.emit(read_ld_current)
+                self.worker.read_diode_current_ready_old.emit(read_ld_current)
                 #
                 # Wait for settling
                 #
@@ -1742,7 +1810,7 @@ if __name__ == "__main__":
     import pyvisa
     from dazzle_project.instruments.pro8000 import DummyPro8000, PRO_8000
 
-    dummy_enabled = False
+    dummy_enabled = True
     if dummy_enabled:
         pro8000 = DummyPro8000()
     else :

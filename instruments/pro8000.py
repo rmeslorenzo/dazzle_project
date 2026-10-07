@@ -42,6 +42,8 @@ class DummyPro8000:
 
     current_slot = Slot.SLOT1
 
+    tec_enabled = False
+
     def select_slot(self, slot : Slot):
         print("{} selected".format(slot))
         self.current_slot = slot
@@ -75,6 +77,10 @@ class DummyPro8000:
     def set_tec_software_limit(self, current):
         print("current is {} A".format(current))
 
+    def read_tec_software_limit(self):
+        print("current limit is dummy is read." )
+        return 0.6
+
     def set_sensor(self, sensor : Sensor):
         print("Sensor is ", sensor)
 
@@ -88,6 +94,18 @@ class DummyPro8000:
         val = random.uniform(0.4, 0.49)
         print(f"LD Current{val}")
         return val
+
+    def set_ld_on_ch4(self):
+        print("ld ch4 on")
+
+    def set_ld_off_ch6(self):
+        print("ld ch6 off")
+
+    def set_ld_off_ch4(self):
+        print("ld ch4 off")
+
+    def set_ld_on_ch6(self):
+        print("ld ch6 on")
 
     def set_i_share_on(self):
         print("share i on")
@@ -113,6 +131,12 @@ class DummyPro8000:
 
     def read_i_share(self):
         return 0.8
+
+    def set_ld_polarity(self, ld_pol):
+        print(f"dummy: set ld polarity {ld_pol}")
+
+    def set_pd_polarity(self, rd_pol):
+        print(f"dummy: set rd polarity {rd_pol}")
 
     def read_laser_polarity(self):
         return "AG"
@@ -341,8 +365,11 @@ class PRO_8000(Equipment):
     def read_hardware_current_limit(self):
         """Read the current hardware current limit."""
         limcp = -1
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT6, self.Slot.SLOT4]:
             limcp = float(self.query(":LIMCP:ACT?").strip(":LIMCP:ACT "))
+
+        if limcp == -1:
+            print("problem")
         return limcp
 
     def set_laser_diode_software_current_limit(self, LIMC : float):
@@ -365,49 +392,49 @@ class PRO_8000(Equipment):
         try :
             self.write(":VLD:MEAS {}".format(slot.value))
             vld = self.query(":VLD:ACT?" ).strip(":VLD:ACT ")
-            return vld
+            return float(vld[:-1])
         except VisaIOError as e:
             print("read Vld failed", e)
 
     def read_laser_diode_voltage_slot6(self):
         """Read the current laser diode voltage."""
         vld = -1
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT4, self.Slot.SLOT6]:
             self.write(":VLD:MEAS {}".format(self.Slot.SLOT6))
             vld = float(self.query(":VLD:ACT?").strip(":VLD:ACT "))
         return vld
 
     def set_ld_polarity(self, polarity: Polarity):
         """Set the laser polarity."""
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT6, self.Slot.SLOT4]:
             self.write(":LDPOL {}".format(polarity.value))
 
     def set_pd_polarity(self, polarity: Polarity):
         """Set the laser polarity."""
-        if self.current_slot == self.Slot.SLOT6:
+        if self.current_slot in [self.Slot.SLOT6, self.Slot.SLOT4]:
             self.write(":PDPOL {}".format(polarity.value))
 
     def read_laser_polarity(self):
         """Set the laser polarity."""
         try :
-            if self.current_slot == self.Slot.SLOT6:
+            if self.current_slot in [self.Slot.SLOT6, self.Slot.SLOT4]:
                 result = self.query(":LDPOL?")
                 return result.strip(":LDPOL ")[:2]
             else :
-                print("Polarity read failed, channel 6 is unactive")
-                return "slot6 unactive"
+                print("Polarity read failed, channel is unactive")
+                return "slot unactive"
         except VisaIOError as e:
             print(f"Polarity read failed: {e}")
 
     def read_pd_polarity(self):
         """Set the laser polarity."""
         try :
-            if self.current_slot == self.Slot.SLOT6:
+            if self.current_slot in [self.Slot.SLOT6, self.Slot.SLOT4]:
                 result = self.query(":PDPOL?")
                 # print("instrument : " + result.strip(":PDPOL ")[:2])
                 return result.strip(":PDPOL ")[:2]
             else :
-                return "slot6 unactive"
+                return "slot unactive"
         except VisaIOError as e:
             print(f"Polarity read failed: {e}")
 
