@@ -18,6 +18,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         # =====================================================
         # Controls
         # =====================================================
+        self.fit_button = QtWidgets.QPushButton("Fit Image")
+        self.fit_button.clicked.connect(self.fit_image)
 
         self.load_button = QtWidgets.QPushButton("Load Image")
         self.load_button.clicked.connect(self.load_image)
@@ -57,6 +59,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         stats_layout.addWidget(self.cursor_label)
         stats_layout.addWidget(QtWidgets.QLabel("Profile:"))
         stats_layout.addWidget(self.profile_mode)
+
         stats_layout.addStretch()
 
         # =====================================================
@@ -74,6 +77,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.image_item = pg.ImageItem()
         self.image_plot.addItem(self.image_item)
+
 
         #
         # ROW PROFILE (RIGHT)
@@ -111,14 +115,22 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.graphics.ci.layout.setColumnStretchFactor(1, 1)
 
         # =====================================================
+        #                  IMAGE OPTIONS
+        # =====================================================
+        image_layout = QtWidgets.QHBoxLayout()
+        image_layout.addWidget(self.load_button)
+        image_layout.addWidget(self.fit_button)
+
+        # =====================================================
         # Main Layout
         # =====================================================
+
 
         layout = QtWidgets.QVBoxLayout(self)
 
         layout.addWidget(self.graphics)
         layout.addLayout(stats_layout)
-        layout.addWidget(self.load_button)
+        layout.addLayout(image_layout)
 
         # ==================================
         #  READ PIXEL WHEN MOUSE IS POINTING
@@ -169,6 +181,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.set_image(image)
 
+        self.fit_image()
+
     # ================
     #  MOUSE MOVED
     #================
@@ -200,6 +214,14 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
                 f"X: {x}   Y: {y}   Pixel: {pixel_value:.2f}"
             )
 
+        else : # cursor outside image
+
+            self.cursor_label.setText(
+                "Outside image"
+            )
+
+            return
+
         self.v_line.setPos(x)
         self.h_line.setPos(y)
 
@@ -213,6 +235,18 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.update_display()
 
+    def fit_image(self):
+        if self.image is None:
+            return
+
+        rows, cols = self.image.shape
+
+        self.image_plot.setRange(
+            xRange=(0, cols),
+            yRange=(0, rows),
+            padding=0
+        )
+
     # =========================================================
     # Display Update
     # =========================================================
@@ -223,6 +257,25 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             return
 
         rows, cols = self.image.shape
+
+        # disabling zoomin out outside camera size
+        viewbox = self.image_plot.getViewBox()
+        #
+        viewbox.setLimits(
+            xMin=0,
+            yMin=0,
+        )
+        # hide the axis beyond image size
+        self.image_plot.hideAxis('left')
+        self.image_plot.hideAxis('bottom')
+
+        viewbox.autoRange()
+        #
+        # self.image_plot.setRange(
+        #     xRange=(0, cols),
+        #     yRange=(0, rows),
+        #     padding=0
+        # )
 
         #
         # update profiles
