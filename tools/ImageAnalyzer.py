@@ -2,7 +2,12 @@ import numpy as np
 from PIL import Image
 
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPen
+
 import pyqtgraph as pg
+
+from pathlib import Path
 
 
 pg.setConfigOptions(imageAxisOrder="row-major")
@@ -121,6 +126,37 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         image_layout.addWidget(self.load_button)
         image_layout.addWidget(self.fit_button)
 
+        # ----------------------------------------------
+        #   Image load option for *.bin and *.npy files
+        # ----------------------------------------------
+        self.width_spin = QtWidgets.QSpinBox()
+        self.width_spin.setRange(1, 100000)
+        self.width_spin.setValue(640)
+
+        self.height_spin = QtWidgets.QSpinBox()
+        self.height_spin.setRange(1, 100000)
+        self.height_spin.setValue(512)
+
+        self.dtype_combo = QtWidgets.QComboBox()
+        self.dtype_combo.addItems([
+            "uint8",
+            "uint16",
+            "float32"
+        ])
+
+        params_layout = QtWidgets.QHBoxLayout()
+
+        params_layout.addWidget(QtWidgets.QLabel("Width"))
+        params_layout.addWidget(self.width_spin)
+
+        params_layout.addWidget(QtWidgets.QLabel("Height"))
+        params_layout.addWidget(self.height_spin)
+
+        params_layout.addWidget(QtWidgets.QLabel("Datatype"))
+        params_layout.addWidget(self.dtype_combo)
+
+        params_layout.addStretch()
+
         # =====================================================
         # Main Layout
         # =====================================================
@@ -130,6 +166,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         layout.addWidget(self.graphics)
         layout.addLayout(stats_layout)
+        layout.addLayout(params_layout)
         layout.addLayout(image_layout)
 
         # ==================================
@@ -166,18 +203,55 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             self,
             "Open Image",
             "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
+            "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.npy *.bin)"
         )
 
         if not filename:
             return
 
-        img = Image.open(filename)
+        try :
 
-        if img.mode != "L":
-            img = img.convert("L")
+            suffix = Path(filename).suffix.lower()
 
-        image = np.array(img)
+            if suffix in [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]:
+
+                img = Image.open(filename)
+
+                if img.mode != "L":
+                    img = img.convert("L")
+
+                image = np.array(img)
+
+
+            elif suffix == ".npy":
+
+                image = np.load(filename)
+
+                # When loading a .npy, you can automatically update the GUI:
+                rows, cols = image.shape
+
+                self.width_spin.setValue(cols)
+                self.height_spin.setValue(rows)
+
+                dtype_name = str(image.dtype)
+
+                index = self.dtype_combo.findText(dtype_name)
+
+                if index >= 0:
+                    self.dtype_combo.setCurrentIndex(index)
+
+            elif suffix == ".bin":
+
+                image = self.load_bin_file(filename)
+
+            else :
+                return
+
+        except Exception as e:
+
+            self.show_error(
+                f"Could not load image:\n\n{str(e)}"
+            )
 
         self.set_image(image)
 
@@ -247,6 +321,51 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             padding=0
         )
 
+    def load_bin_file(self, filename):
+
+        width = self.width_spin.value()
+        height = self.height_spin.value()
+
+        dtype_name = self.dtype_combo.currentText()
+
+        dtype_map = {
+            "uint8": np.uint8,
+            "uint16": np.uint16,
+            "float32": np.float32,
+        }
+
+        dtype = dtype_map[dtype_name]
+
+        data = np.fromfile(
+            filename,
+            dtype=dtype
+        )
+
+        print("dtype =", dtype)
+        print("file elements =", data.size)
+        print("expected =", width * height)
+
+        expected_size = width * height
+        ratio = data.size / expected_size
+
+        if data.size != expected_size:
+            raise ValueError(
+                f"Expected {expected_size} pixels "
+                f"but found {data.size} "
+                f"(ratio = {ratio:.2f})\n\n"
+                "Check width, height or datatype."
+            )
+
+        return data.reshape(height, width)
+
+    def show_error(self, text):
+
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Image Loading Error",
+            text
+        )
+
     # =========================================================
     # Display Update
     # =========================================================
@@ -261,21 +380,29 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         # disabling zoomin out outside camera size
         viewbox = self.image_plot.getViewBox()
         #
-        viewbox.setLimits(
-            xMin=0,
-            yMin=0,
-        )
+        # viewbox.setLimits(
+        #     xMin=0,
+        #     yMin=0,
+        # )
         # hide the axis beyond image size
         self.image_plot.hideAxis('left')
         self.image_plot.hideAxis('bottom')
 
         viewbox.autoRange()
+
         #
-        # self.image_plot.setRange(
-        #     xRange=(0, cols),
-        #     yRange=(0, rows),
-        #     padding=0
-        # )
+        # create image border
+        #
+        self.image_border = QtWidgets.QGraphicsRectItem(
+            0, 0,
+            cols, rows
+        )
+
+        self.image_border.setPen(
+            QPen(Qt.GlobalColor.green, 2)
+        )
+
+        self.image_plot.addItem(self.image_border)
 
         #
         # update profiles
