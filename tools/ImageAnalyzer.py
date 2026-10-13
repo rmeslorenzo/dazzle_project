@@ -83,7 +83,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.image_item = pg.ImageItem()
         self.image_plot.addItem(self.image_item)
 
-
+        self.image_border = None
         #
         # ROW PROFILE (RIGHT)
         #
@@ -393,6 +393,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         #
         # create image border
         #
+        if self.image_border is not None:
+            self.image_plot.removeItem(self.image_border)
+
         self.image_border = QtWidgets.QGraphicsRectItem(
             0, 0,
             cols, rows
