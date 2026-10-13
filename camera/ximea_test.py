@@ -78,6 +78,9 @@ for i in range(10):
 print('Stopping acquisition...')
 cam.stop_acquisition()
 
+np.save(r"C:\Users\rmmestre\dazzle_project\ximea_capture" + "background_ximea.npy", np_data)
+np_data.astype(np.uint16).tofile("bakcground_ximea.bin")
+
 print("test")
 
 #stop communication
