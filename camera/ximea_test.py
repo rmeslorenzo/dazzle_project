@@ -2,6 +2,8 @@ from ximea import xiapi
 import numpy as np
 import matplotlib.pyplot as plt
 
+from time import sleep
+
 #create instance for first connected camera
 cam = xiapi.Camera()
 
@@ -27,24 +29,52 @@ gpi_selector = cam.get_gpi_selector()
 gpi_selector_min = cam.get_gpi_selector_minimum()
 gpi_selector_max = cam.get_gpi_selector_maximum()
 gpi_selector_inc = cam.get_gpi_selector_increment()
-cam.set_gpi_selector(gpi_selector)
+# cam.set_gpi_selector(gpi_selector)
+cam.get_param("gpi_selector")
 #mode
 gpi_mode = cam.get_gpi_mode()
 gpi_mode_min = cam.get_gpi_mode_minimum()
 gpi_mode_max = cam.get_gpi_mode_maximum()
 gpi_mode_inc = cam.get_gpi_mode_increment()
-cam.set_gpi_mode(gpi_mode)
+# cam.set_gpi_mode(gpi_mode_max)
+cam.set_param("gpi_mode", "XI_GPI_OFF")
+sleep(0.5)
+cam.get_param("gpi_mode")
+cam.set_param("gpi_mode", "XI_GPI_TRIGGER")
+
+#source
+gpi_source = cam.get_trigger_source()
+gpi_source_min = cam.get_trigger_source_minimum()
+gpi_source_max = cam.get_trigger_source_maximum()
+gpi_source_inc = cam.get_trigger_source_increment()
+# cam.set_trigger_source(gpi_source)
+cam.get_param("trigger_selector")
+cam.set_param("trigger_source", "XI_TRG_EDGE_RISING")
+
+#trigger overlap
+trigger_overlap = cam.get_trigger_overlap()
+trigger_overlap_min = cam.get_trigger_overlap_minimum()
+trigger_overlap_max = cam.get_trigger_overlap_maximum()
+trigger_overlap_inc = cam.get_trigger_overlap_increment()
+
+cam.set_trigger_overlap(trigger_overlap)
+
 #level
 gpi_level = cam.get_gpi_level()
 gpi_level_min = cam.get_gpi_level_minimum()
 gpi_level_max = cam.get_gpi_level_maximum()
 gpi_level_inc = cam.get_gpi_level_increment()
+
+cam.get_param("gpi_level")
+# cam.get_param("gpi_level_at_image_exp_start")
 #gpo selector
 gpo_selector = cam.get_gpo_selector()
 gpo_selector_min = cam.get_gpo_selector_minimum()
 gpo_selector_max = cam.get_gpo_selector_maximum()
 gpo_selector_inc = cam.get_gpo_selector_increment()
-cam.set_gpo_selector(gpo_selector)
+# cam.set_gpo_selector(gpo_selector)
+cam.get_param("gpo_mode")
+cam.set_param("gpo_mode", "XI_GPO_HIGH_IMPEDANCE")
 
 #start data acquisition
 print('Starting data acquisition...')
