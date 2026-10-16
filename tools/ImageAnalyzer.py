@@ -73,6 +73,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.graphics = pg.GraphicsLayoutWidget()
 
+        # histogram levels
+        self.histogram = pg.HistogramLUTWidget()
+
         #
         # IMAGE
         #
@@ -81,6 +84,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.image_plot.setAspectLocked(True)
 
         self.image_item = pg.ImageItem()
+        # associate histogram with image
+        self.histogram.setImageItem(self.image_item)
         self.image_plot.addItem(self.image_item)
 
         self.image_border = None
@@ -161,10 +166,13 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         # Main Layout
         # =====================================================
 
+        plot_layout = QtWidgets.QHBoxLayout()
+        plot_layout.addWidget(self.graphics)
+        plot_layout.addWidget(self.histogram)
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        layout.addWidget(self.graphics)
+        layout.addLayout(plot_layout)
         layout.addLayout(stats_layout)
         layout.addLayout(params_layout)
         layout.addLayout(image_layout)
@@ -254,6 +262,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             )
 
         self.set_image(image)
+
+        self.image_item.setImage(self.image,autoLevels=True)
 
         self.fit_image()
 
