@@ -1,3 +1,16 @@
+# Date : 13/10/2026
+# Project : TENSIS ( Technology for EuropeaN independance in Space Image Sensors )
+# Author : Ricardo Mestre
+# ---------------------Description ------------------------------
+# Image Analyzer software to process the image acquired by our camera during LIDT (Laser Induced Damage Threshold)
+# experiment.
+# ImageAnalyzer will measure the laser beam diameter (1/e2) of a gaussian beam and measured the number of pixels
+# that are damaged (10% deviation from normal image) or dazzled (saturated).
+# The diameter will be given in mumber of pixels or um2 if the pixel sized is inputed.
+# -----------------------------------------------------------------------
+
+
+
 import numpy as np
 from PIL import Image
 

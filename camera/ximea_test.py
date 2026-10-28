@@ -16,7 +16,7 @@ print('Opening first camera...')
 cam.open_device()
 
 #settings
-cam.set_exposure(150) # exposure is in us
+cam.set_exposure(1000) # exposure is in us
 print('Exposure was set to %i us' %cam.get_exposure())
 temperature = cam.get_temp()
 
@@ -40,7 +40,7 @@ gpi_mode_inc = cam.get_gpi_mode_increment()
 cam.set_param("gpi_mode", "XI_GPI_OFF")
 sleep(0.5)
 cam.get_param("gpi_mode")
-cam.set_param("gpi_mode", "XI_GPI_TRIGGER")
+# cam.set_param("gpi_mode", "XI_GPI_TRIGGER")
 
 #source
 gpi_source = cam.get_trigger_source()
@@ -49,15 +49,15 @@ gpi_source_max = cam.get_trigger_source_maximum()
 gpi_source_inc = cam.get_trigger_source_increment()
 # cam.set_trigger_source(gpi_source)
 cam.get_param("trigger_selector")
-cam.set_param("trigger_source", "XI_TRG_EDGE_RISING")
+# cam.set_param("trigger_source", "XI_TRG_EDGE_RISING")
 
 #trigger overlap
-trigger_overlap = cam.get_trigger_overlap()
-trigger_overlap_min = cam.get_trigger_overlap_minimum()
-trigger_overlap_max = cam.get_trigger_overlap_maximum()
-trigger_overlap_inc = cam.get_trigger_overlap_increment()
+# trigger_overlap = cam.get_trigger_overlap()
+# trigger_overlap_min = cam.get_trigger_overlap_minimum()
+# trigger_overlap_max = cam.get_trigger_overlap_maximum()
+# trigger_overlap_inc = cam.get_trigger_overlap_increment()
 
-cam.set_trigger_overlap(trigger_overlap)
+# cam.set_trigger_overlap("trigger_overlap")
 
 #level
 gpi_level = cam.get_gpi_level()
@@ -74,7 +74,7 @@ gpo_selector_max = cam.get_gpo_selector_maximum()
 gpo_selector_inc = cam.get_gpo_selector_increment()
 # cam.set_gpo_selector(gpo_selector)
 cam.get_param("gpo_mode")
-cam.set_param("gpo_mode", "XI_GPO_HIGH_IMPEDANCE")
+# cam.set_param("gpo_mode", "XI_GPO_HIGH_IMPEDANCE")
 
 #start data acquisition
 print('Starting data acquisition...')
@@ -108,8 +108,10 @@ for i in range(10):
 print('Stopping acquisition...')
 cam.stop_acquisition()
 
-np.save(r"C:\Users\rmmestre\dazzle_project\ximea_capture" + "background_ximea.npy", np_data)
-np_data.astype(np.uint16).tofile("bakcground_ximea.bin")
+name_file = "background_pixel_destruction_after_setup_pinhole_at_camera.npy"
+
+np.save(r"C:\Users\rmmestre\dazzle_project\ximea_capture" + "\\"+ name_file, np_data)
+# np_data.astype(np.uint16).tofile("bakcground_ximea.bin")
 
 print("test")
 
