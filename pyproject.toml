@@ -1,0 +1,30 @@
+[project]
+name = "dazzle-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "eric-ide>=26.8",
+    "libusb-package>=1.0.30.0",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "pyqt6>=6.11.0",
+    "pyqtgraph>=0.14.0",
+    "pysub>=0.2",
+    "pyusb>=1.3.1",
+    "pyvisa>=1.16.2",
+    "pyvisa-py>=0.8.1",
+    "pywinusb>=0.4.2",
+    "requests>=2.34.2",
+    "thorlabspm100>=1.2.2",
+    "types-docutils~=0.23",
+]
+
+[project.scripts]
+dazzle-project = "dazzle_project:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
