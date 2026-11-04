@@ -1,0 +1,1829 @@
+# Date : 03/09/2026
+# Project : TENSIS ( Technology for EuropeaN independance in Space Image Sensors )
+# Author : Ricardo Mestre
+# ---------------------Description ------------------------------
+# Measurement of the dazzle testing of our image sensor.
+# Instrument control Interface (laser driver and powermeter) and data acquisition for our dazzling test setup
+# to gather preliminary results of image behavior to high power exposition.
+# -----------------------------------------------------------------------
+
+import queue
+from time import sleep
+
+from PyQt6 import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
+import time
+from enum import Enum
+# import CSV
+import statistics
+import csv
+import datetime
+
+
+from dazzle_project.gui.instrument_gui import InstrumentWidget
+from dazzle_project.instruments.pro8000 import PRO_8000
+from dazzle_project.instruments.newport_2835_C import NEWPORT_2835_C
+from dazzle_project.instruments.test_wrap_2936_R import Newport_2936R
+from dazzle_project.tools.ParameterSweep import ParameterSweep
+
+
+
+
+class AcquisitionMode(Enum):
+    MANUAL_CH1 = 1
+    MANUAL_CH6 = 2
+    AUTO = 3
+
+# ---------------------------------------
+#   LD Controler GUI
+#----------------------------------------
+# Description :
+# Gui for the Laser/Diode drivers
+# There are two in the pro8000 device
+# On the Slot 4 and 6
+# ---------------------------------------
+
+class LDControlerWidget(InstrumentWidget):
+    def __init__(self, instrument, parent, channel : int = 0):
+        super().__init__(instrument, parent)
+        self.slot_number = channel
+        if self.slot_number == 6 :
+            self.laser_on  = self.instrument.set_ld_on_ch6
+            self.laser_off = self.instrument.set_ld_off_ch6
+        elif self.slot_number == 4 :
+            self.laser_on  = self.instrument.set_ld_on_ch4
+            self.laser_off = self.instrument.set_ld_off_ch4
+        else:
+            raise ValueError("Wrong channel input for LD Controller. Can only be 4 or 6")
+
+        if self.slot_number == 6:
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch6_requested
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch6_limit_requested
+
+        elif self.slot_number == 4:
+            self.apply_current_requested = self.parent.worker.apply_diode_current_ch4_requested
+            self.apply_current_limit_requested = self.parent.worker.apply_diode_current_ch4_limit_requested
+        else:
+            raise ValueError("Wrong channel input for LD Controller.")
+
+        print(f"LDController channel {self.slot_number} created")
+
+        # Shape Box
+        diode_control_label = QtWidgets.QLabel(parent=self)
+        diode_control_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        diode_control_label.setObjectName("diode_control_label")
+        diode_control_label.setText(f"DIODE CONTROL Channel {channel}")
+
+        self.main_layout.addWidget(diode_control_label)
+
+        # Laser Toggle
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Laser Toggle"))
+        self.laser_toogle = QtWidgets.QPushButton(parent=self)
+        self.laser_toogle.setText("OFF")
+        self.laser_toogle.setStyleSheet("background-color: red;")
+        row.addWidget(self.laser_toogle)
+        self.main_layout.addLayout(row)
+        self.laser_toogle.setCheckable(True)
+
+        # Laser Diode Polarity
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Laser Diode Polarity"))
+
+        self.ld_polarity = QtWidgets.QComboBox()
+        self.ld_polarity.addItems([p.value for p in self.instrument.Polarity])
+        row.addWidget(self.ld_polarity)
+
+        self.ld_read = QtWidgets.QLabel("Read Polarity : --")
+        row.addWidget(self.ld_read)
+
+        self.main_layout.addLayout(row)
+
+        # Photo Diode Polarity
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Photo Diode Polarity"))
+        self.pd_polarity = QtWidgets.QComboBox()
+        self.pd_polarity.addItems([p.value for p in self.instrument.Polarity])
+        row.addWidget(self.pd_polarity)
+
+        self.pd_read = QtWidgets.QLabel("Read Polarity : --")
+        row.addWidget(self.pd_read)
+
+        self.main_layout.addLayout(row)
+
+        # Apply Polarity
+        self.btn_apply_polarity = QtWidgets.QPushButton("Apply Polarity")
+        self.main_layout.addWidget(self.btn_apply_polarity)
+
+        # Diode Current
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Set diode current [A]"))
+
+        self.current_spin = QtWidgets.QDoubleSpinBox()
+        self.current_spin.setDecimals(4)
+        self.current_spin.setRange(0.0, 10.0)
+        self.current_spin.setSingleStep(0.001)
+        row.addWidget(self.current_spin)
+        self.current_read = QtWidgets.QLabel("current : ---- [A]")
+        row.addWidget(self.current_read)
+
+        self.main_layout.addLayout(row)
+        # Apply Current
+        self.btn_apply_current = QtWidgets.QPushButton("Apply LD current")
+        self.main_layout.addWidget(self.btn_apply_current)
+
+        # Soft Limit
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Soft Current Limit Imax [A]"))
+        self.limit_spin = QtWidgets.QDoubleSpinBox()
+        self.limit_spin.setDecimals(4)
+        self.limit_spin.setRange(0.0, 4)
+        row.addWidget(self.limit_spin)
+        self.btn_apply_current_limit = QtWidgets.QPushButton("Apply Limit Current")
+        row.addWidget(self.btn_apply_current_limit)
+        self.main_layout.addLayout(row)
+
+        # Read Hard Limit
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Read Hard Limit"))
+        self.hard_limit_label = QtWidgets.QLabel("---- [A]")
+        row.addWidget(self.hard_limit_label)
+        self.main_layout.addLayout(row)
+
+        # Read VLD
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Read VLD"))
+        self.vld_label = QtWidgets.QLabel("---- [V]")
+        row.addWidget(self.vld_label)
+        self.main_layout.addLayout(row)
+
+        self.setLayout(self.main_layout)
+
+        # --------------------------------
+        #        CONNECTIONS
+        # --------------------------------
+        self.laser_toogle.clicked.connect(self.toogle_ld)
+        self.btn_apply_current.clicked.connect(lambda: self.apply_current_requested.emit(self.current_spin.value()))
+        self.btn_apply_polarity.clicked.connect(lambda: self.parent.worker.apply_polarity_requested.emit(self.pd_polarity.currentText(), self.ld_polarity.currentText(), self.slot_number))
+        # self.laser_current_limit_button.clicked.connect(lambda: self.parent.worker.apply_diode_current_limit_requested.emit(
+        #         self.limit_spin.value()))
+
+    # -------------------------------------
+    #              FUNCTIONS
+    # -------------------------------------
+    def toogle_ld(self, checked):
+        print("toggle_ld:", checked)
+        if checked:
+            print("toogle ld on")
+            self.laser_toogle.setText("ON")
+            self.laser_toogle.setStyleSheet("background-color: green;")
+            self.laser_on()
+        else:
+            print("toogle ld off")
+            self.laser_toogle.setText("OFF")
+            self.laser_toogle.setStyleSheet("background-color: red;")
+            self.laser_off()
+
+    def set_diode_current_limit(self, value):
+        self.parent.instrument.set_laser_diode_software_current_limit(value)
+
+
+# ----------------------------------
+#      TEC CONTROLER GUI
+# ----------------------------------
+# Description :
+# GUI for the TEC Controler located
+# on the slot 0 of the pro8000
+# device. Set the temperature and
+# read the temperature of the laser
+# and has PID functionality to
+# configure temperature settling
+# ----------------------------------
+
+
+class MeasurementWorker(QtCore.QObject):
+
+    read_temperature_ready             = QtCore.pyqtSignal(float)
+    read_temperature_requested         = QtCore.pyqtSignal()
+    read_temperature_sensor_ready      = QtCore.pyqtSignal(str, str, float)
+    read_pid_requested                 = QtCore.pyqtSignal()
+    read_pid_settings_ready            = QtCore.pyqtSignal(float, float, float)
+    read_vte_voltage_ready             = QtCore.pyqtSignal(float)
+    read_itec_current_ready            = QtCore.pyqtSignal(float)
+    read_polarities_ready              = QtCore.pyqtSignal(str, str, int)
+    read_diode_current_ready_old       = QtCore.pyqtSignal(float)
+    read_diode_current_ready           = QtCore.pyqtSignal(float, int)
+    read_soft_current_limit_ready     = QtCore.pyqtSignal(float)
+    read_tec_requested                = QtCore.pyqtSignal()
+    read_tec_soft_current_limit_ready = QtCore.pyqtSignal(float)
+    read_hardware_current_limit_ready = QtCore.pyqtSignal(float, int)
+    read_vld_ready                    = QtCore.pyqtSignal(float, int)
+
+    # For LD Controller class
+    read_vld_requested                = QtCore.pyqtSignal(int)
+
+    read_powermeter_ready             = QtCore.pyqtSignal(float)
+
+    update_plot_requested             = QtCore.pyqtSignal(bool)
+    # read_all_ready = QtCore.pyqtSignal(float, float, float)
+    apply_temperature_requested         = QtCore.pyqtSignal(float)
+    apply_pid_requested                 = QtCore.pyqtSignal(float, float, float)
+    apply_tec_soft_current_limit_requested  = QtCore.pyqtSignal(float)
+    apply_polarity_requested            = QtCore.pyqtSignal(str, str, int)
+    apply_diode_current_ch6_requested       = QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_limit_requested = QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_requested       = QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_limit_requested = QtCore.pyqtSignal(float)
+    apply_sweep_requested               = QtCore.pyqtSignal(float, float, int)
+
+    polarity_applied_ready             =  QtCore.pyqtSignal(int)
+    apply_diode_current_ch6_ready          =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_ready      = QtCore.pyqtSignal(float)
+    apply_tec_soft_current_limit_ready     =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch6_limit_ready    =  QtCore.pyqtSignal(float)
+    apply_diode_current_ch4_limit_ready = QtCore.pyqtSignal(float)
+    temperature_applied_ready          =  QtCore.pyqtSignal(float)
+    apply_sweep_ready                  =  QtCore.pyqtSignal(float, float, int)
+    apply_pid_ready                    =  QtCore.pyqtSignal(float, float, float)
+
+    apply_pid_changed                  =  QtCore.pyqtSignal(object)
+    apply_tec_soft_current_limit_changed   = QtCore.pyqtSignal(object)
+
+    check_powermeter_ready                  = QtCore.pyqtSignal(bool)
+
+    def __init__(self):
+        super().__init__()
+        self.instrument = None
+        self.active_channels = []
+        self.powermeter = None
+        self.queue = queue.Queue()
+        self.next_slot = 0
+        self.current_temperature = 0
+        self.current_resistance  = 0
+        self.current_vte_voltage = 0
+        self.current_ite_current = 0
+        self.current_power = 0
+        self.current_calibration = None
+        self.previous_ld_polarity = None
+        self.previous_pd_polarity = None
+        self.previous_diode_current = None
+        self.previous_diode_current_limit = None
+        self.powermeter_created = False
+
+    # TEC
+    @QtCore.pyqtSlot()
+    def read_temperature(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            value = self.instrument.read_temperature_slot1()
+            if isinstance(value, float):
+                self.current_temperature = value
+            else :
+                value = self.current_temperature
+            self.read_temperature_ready.emit(value)
+
+    @QtCore.pyqtSlot()
+    def read_pid_settings(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            p_value = self.instrument.read_p_share()
+            d_value = self.instrument.read_d_share()
+            i_value = self.instrument.read_i_share()
+            if p_value is None:
+                p_value = -1
+            if d_value is None:
+                d_value = -1
+            if i_value is None:
+                i_value = -1
+
+            self.read_pid_settings_ready.emit(p_value, d_value, i_value)
+
+    @QtCore.pyqtSlot()
+    def read_vte_voltage(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            value = self.instrument.read_tec_voltage_slot1()
+            # print("VTE is", value)
+            # print("Current slot", self.instrument.current_slot.value)
+            if isinstance(value, float):
+                self.current_vte_voltage = value
+            else:
+                value = self.current_vte_voltage
+            self.read_vte_voltage_ready.emit(value)
+
+    @QtCore.pyqtSlot()
+    def read_itec_current(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            value = self.instrument.read_tec_current_slot1()
+            self.current_ite_current = value
+            self.read_itec_current_ready.emit(value)
+
+    @QtCore.pyqtSlot()
+    def read_tec_soft_current_limit(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            value = self.instrument.read_tec_software_limit()
+            self.current_vte_voltage = value
+            self.read_tec_soft_current_limit_ready.emit(value)
+
+    @QtCore.pyqtSlot()
+    def read_temperature_sensor(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            if self.instrument.Calibration.value == "EXP":
+                calib_value = self.instrument.current_calibration.value if isinstance(self.instrument.current_calibration.value, str)  else "Unknown"
+                sensor_value = self.instrument.get_sensor()
+                r_val = self.instrument.read_resistance_sensor()
+                self.read_temperature_sensor_ready.emit(calib_value, sensor_value, r_val)
+
+    @QtCore.pyqtSlot()
+    def read_tec(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            value_vte = self.instrument.read_tec_voltage_slot1()
+            value_ite = self.instrument.read_tec_current_slot1()
+            # print(f"current_tec : {value_ite}, voltage TEC : {value_vte}")/
+            # value_ri  = self.instrument.read_temperature_sensor()
+            if value_vte is not None or value_ite is not None:
+                self.current_vte_voltage = value_vte
+                self.current_ite_current = value_ite
+                # self.current_resistance = value_ri
+                # print(f"current_tec : {value_ite}, voltage TEC : {value_vte}")
+                self.read_itec_current_ready.emit(value_ite)
+                self.read_vte_voltage_ready.emit(value_vte)
+            # self.read_temperature_sensor_ready.emit(value_ri)
+
+    @QtCore.pyqtSlot()
+    def read_all_tec(self):
+
+        self.instrument.select_slot(
+            self.instrument.Slot.SLOT1
+        )
+
+        self.read_temperature()
+        # self.instrument.update_temperature_plot()
+        self.read_itec_current()
+        self.read_vte_voltage()
+        # self.read_pid_settings()
+
+
+    # DIODE
+    @QtCore.pyqtSlot(int)
+    def read_polarities(self, channel: int):
+        # print("read pd polarity")
+        laser_slot = self.instrument.Slot(channel)
+        previous_slot = None
+
+        if self.instrument.current_slot != laser_slot:
+
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(laser_slot)
+
+        pd_polarity = self.instrument.read_pd_polarity()
+        ld_polarity = self.instrument.read_laser_polarity()
+
+        if previous_slot is not None:
+            self.instrument.select_slot(previous_slot)
+
+        self.read_polarities_ready.emit(pd_polarity, ld_polarity, channel)
+
+    @QtCore.pyqtSlot()
+    def read_ld_soft_current_limit(self):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
+            value = self.instrument.read_laser_diode_software_current_limit()
+            self.read_soft_current_limit_ready.emit(value)
+
+    @QtCore.pyqtSlot(int)
+    def read_hard_current_limit(self, channel):
+        if self.instrument.current_slot in [self.instrument.Slot.SLOT6, self.instrument.Slot.SLOT4]:
+            value = self.instrument.read_hardware_current_limit()
+            self.read_hardware_current_limit_ready.emit(value, channel)
+
+    @QtCore.pyqtSlot()
+    def read_diode_current_old(self):
+        # print(f"current channel is {self.instrument.current_slot}")
+        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
+            # print("read diode current")
+            value = self.instrument.read_diode_current_slot6()
+            # print(f"diode current : {value}")
+            self.read_diode_current_ready_old.emit(value)
+
+    # same method for LDController class
+
+    @QtCore.pyqtSlot()
+    def read_diode_current(self, slot_num : int):
+
+        # get selected slot
+        laser_slot = self.instrument.Slot(slot_num)
+        # print(f"LDController:read_diode_current: Slot is {laser_slot.value}")
+        if self.instrument.current_slot == laser_slot:
+            # print("LDController: read diode current")
+            value = self.instrument.read_diode_current(laser_slot)
+            # print(f"LDController: diode current : {value}")
+            self.read_diode_current_ready.emit(value, slot_num)
+
+    @QtCore.pyqtSlot(int)
+    def read_vld_voltage(self, channel:int):
+        laser_slot = self.instrument.Slot(channel)
+        # print(f"reading slot {laser_slot.name} of channel {channel}")
+        if self.instrument.current_slot in [self.instrument.Slot.SLOT6, self.instrument.Slot.SLOT4]:
+            if channel == 6:
+                value = self.instrument.read_laser_diode_voltage_slot6()
+            else :
+                value = self.instrument.read_laser_diode_voltage(laser_slot)
+
+            self.read_vld_ready.emit(value, channel)
+
+    @QtCore.pyqtSlot()
+    def read_powermeter(self):
+            if self.powermeter_created:
+                value = self.powermeter.read_single_power()
+                # print(f"power is {value} W")
+                if isinstance(value, float) :
+                    self.current_power = value
+                    self.read_powermeter_ready.emit(value)
+
+    @QtCore.pyqtSlot()
+    def read_all_ld(self):
+
+        self.instrument.select_slot(
+            self.instrument.Slot.SLOT6
+        )
+
+        self.read_diode_current(6)
+        self.read_vld_voltage(6)
+        self.read_hard_current_limit(6)
+
+        for ch in self.active_channels:
+            if ch!=6:
+
+                self.instrument.select_slot(self.instrument.Slot(ch))
+                self.read_diode_current(ch)
+                self.read_vld_voltage(ch)
+                self.read_hard_current_limit(ch)
+
+
+    @QtCore.pyqtSlot()
+    def auto_read_cycle(self):
+
+        current_slot = self.next_slot
+
+        try :
+            # print("autoread")
+            if self.next_slot == self.instrument.Slot.SLOT1:
+                # print("readin tec")
+                self.read_all_tec()
+                # self.instrument.update_temperature_plot()
+
+                self.next_slot = self.instrument.Slot.SLOT6
+
+            elif self.next_slot == self.instrument.Slot.SLOT6:
+                # print("readin ld")
+                self.read_all_ld()
+
+                self.next_slot = self.instrument.Slot.SLOT1
+
+            else:
+                # print("reading nothing")
+                self.next_slot = self.instrument.Slot.SLOT1
+
+        except Exception as e:
+            print(f"Auto read failed: {e}")
+
+        finally:
+            if current_slot == self.instrument.Slot.SLOT1:
+                self.next_slot = self.instrument.Slot.SLOT6
+            else:
+                self.next_slot = self.instrument.Slot.SLOT1
+
+    # -----------------
+    #   apply values
+    # -----------------
+    @QtCore.pyqtSlot(str, str, int)
+    def apply_polarities(self, pd_pol, ld_pol, channel : int = 6):
+
+        laser_slot = self.instrument.Slot(channel)
+        print(f"applying polarities: {pd_pol} and {ld_pol} on Slot {channel}")
+        if self.previous_pd_polarity != pd_pol or self.previous_ld_polarity != ld_pol or not self.previous_ld_polarity in ["AG, CG"] or not self.previous_pd_polarity in ["AG, CG"]:
+
+            # Polarity controls are on slot 6
+            if self.instrument.current_slot != laser_slot :
+
+                previous_slot = self.instrument.current_slot
+                self.instrument.select_slot(laser_slot)
+
+            else :
+                previous_slot = self.instrument.Slot.SLOT6
+
+            pd_polarity = self.instrument.Polarity(pd_pol)
+            self.instrument.set_pd_polarity(pd_polarity)
+            ld_polarity = self.instrument.Polarity(ld_pol)
+            self.instrument.set_ld_polarity(ld_polarity)
+
+            self.previous_pd_polarity = pd_pol
+            self.previous_ld_polarity = ld_pol
+            self.polarity_applied_ready.emit(channel)
+
+            # return to previous slot
+            self.instrument.select_slot(previous_slot)
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch6(self, current_val):
+
+        print(f"applying diode current: {current_val} [A]")
+        # Polarity controls are on slot 6
+        if self.instrument.current_slot == self.instrument.Slot.SLOT6:
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.apply_diode_current_ch6_ready.emit(current_val)
+        else :
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(self.instrument.Slot.SLOT6)
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.instrument.select_slot(previous_slot)
+            self.apply_diode_current_ch6_ready.emit(current_val)
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch4(self, current_val):
+
+        print(f"applying diode current: {current_val} [A]")
+        # Polarity controls are on slot 4
+        if self.instrument.current_slot == self.instrument.Slot.SLOT4:
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.apply_diode_current_ch4_ready.emit(current_val)
+        else:
+            previous_slot = self.instrument.current_slot
+            self.instrument.select_slot(self.instrument.Slot.SLOT4)
+            self.instrument.set_diode_current(current_val)
+            self.previous_diode_current = current_val
+            self.instrument.select_slot(previous_slot)
+            self.apply_diode_current_ch4_ready.emit(current_val)
+
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch6_limit(self, current_val):
+
+        # Polarity controls are on slot 6
+        if self.previous_diode_current_limit != current_val:
+            if self.instrument.current_slot == self.instrument.Slot.SLOT6:
+                self.instrument.set_laser_diode_software_current_limit(current_val)
+                self.previous_diode_current_limit = current_val
+                self.apply_diode_current_ch6_limit_ready.emit(current_val)
+
+    @QtCore.pyqtSlot(float)
+    def apply_diode_current_ch4_limit(self, current_val):
+
+        # Polarity controls are on slot 6
+        if self.previous_diode_current_limit != current_val:
+            if self.instrument.current_slot == self.instrument.Slot.SLOT4:
+                self.instrument.set_laser_diode_software_current_limit(current_val)
+                self.previous_diode_current_limit = current_val
+                self.apply_diode_current_ch4_limit_ready.emit(current_val)
+
+    @QtCore.pyqtSlot(float)
+    def apply_temperature(self, temperature):
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            self.instrument.set_temperature(temperature)
+            self.temperature_applied_ready.emit(temperature)
+
+    @QtCore.pyqtSlot(float)
+    def apply_tec_current_soft_limit(self, current):
+        print("applying tec soft current limit")
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            print(f"current soft limit: {current}")
+            self.instrument.set_tec_software_limit(current)
+            self.apply_tec_soft_current_limit_ready.emit(current)
+            self.apply_tec_soft_current_limit_changed.emit(True)
+
+    @QtCore.pyqtSlot(float, float, float)
+    def apply_pid(self, p_value, d_value, i_value):
+        print(f"set pid setting p : {p_value}, d : {d_value}, i : {i_value}")
+        if self.instrument.current_slot == self.instrument.Slot.SLOT1:
+            print("We are in slot1, setting pid...")
+            print("set P share")
+            self.instrument.set_p_share(p_value)
+            print("set D share")
+            self.instrument.set_d_share(d_value)
+            print("set I share")
+            self.instrument.set_i_share(i_value)
+            # self.toogle_pid_sharei
+
+            print("pid set")
+            self.apply_pid_ready.emit(p_value, d_value, i_value)
+            self.apply_pid_changed.emit(True)
+
+
+    @QtCore.pyqtSlot(float)
+    def apply_sweep(self, start: float, stop: float, npoints: int):
+        try :
+                sweep = ParameterSweep(start, stop, npoints)
+                for sw in sweep:
+                    print(sw)
+
+        except Exception as e:
+            print(type(e).__name__)
+            print(e)
+
+    @QtCore.pyqtSlot(bool)
+    def apply_create_powermeter(self):
+
+        if not self.powermeter_created:
+            self.check_powermeter_ready.emit(True)
+
+
+class PRO8000_GUI(InstrumentWidget):
+
+    def __init__(self, instrument, parent=None, default_values : dict = None):
+
+        super().__init__(instrument, parent=parent)
+        # ------------
+        #   SETUP UI
+        # ------------
+        self.centralwidget = QtWidgets.QWidget(self)
+        # self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.addWidget(self.centralwidget)
+
+        self.centralwidget.setObjectName("centralwidget")
+        self.gridLayoutWidget = QtWidgets.QWidget(parent=self.centralwidget)
+        self.gridLayoutWidget.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding
+        )
+        # self.gridLayoutWidget.setGeometry(QtCore.QRect(40, 30, 1056, 758))
+        self.gridLayoutWidget.setObjectName("gridLayoutWidget")
+        self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
+        self.main_layout.addWidget(self.gridLayoutWidget)
+
+
+        # ------------------------
+        #  Copy paste until here
+        # ------------------------
+        self.gridLayout.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout.setObjectName("gridLayout")
+        self.verticalLayout_3 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_3.setObjectName("verticalLayout_3")
+        self.label_27 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_27.setMaximumSize(QtCore.QSize(435, 40))
+        self.label_27.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_27.setObjectName("label_27")
+        self.verticalLayout_3.addWidget(self.label_27)
+        self.horizontalLayout_9 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_9.setObjectName("horizontalLayout_9")
+        self.label_14 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_14.setObjectName("label_14")
+        self.horizontalLayout_9.addWidget(self.label_14)
+        self.doubleSpinBox_3 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_3.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English, QtCore.QLocale.Country.Spain))
+        self.doubleSpinBox_3.setMinimum(0.0)
+        self.doubleSpinBox_3.setSingleStep(0.0)
+        self.doubleSpinBox_3.setProperty("value", 0.0)
+        self.doubleSpinBox_3.setObjectName("doubleSpinBox_3")
+        self.horizontalLayout_9.addWidget(self.doubleSpinBox_3)
+        self.label_39 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_39.setObjectName("label_39")
+        self.horizontalLayout_9.addWidget(self.label_39)
+        self.verticalLayout_3.addLayout(self.horizontalLayout_9)
+        self.horizontalLayout_10 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_10.setObjectName("horizontalLayout_10")
+        self.label_15 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_15.setObjectName("label_15")
+        self.horizontalLayout_10.addWidget(self.label_15)
+        self.doubleSpinBox_4 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_4.setObjectName("doubleSpinBox_4")
+        self.horizontalLayout_10.addWidget(self.doubleSpinBox_4)
+        self.label_40 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_40.setObjectName("label_40")
+        self.horizontalLayout_10.addWidget(self.label_40)
+        self.verticalLayout_3.addLayout(self.horizontalLayout_10)
+        self.horizontalLayout_11 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_11.setObjectName("horizontalLayout_11")
+        self.label_16 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_16.setObjectName("label_16")
+        self.horizontalLayout_11.addWidget(self.label_16)
+        self.pushButton_2 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_2.setObjectName("pushButton_2")
+        self.horizontalLayout_11.addWidget(self.pushButton_2)
+        self.verticalLayout_3.addLayout(self.horizontalLayout_11)
+        self.horizontalLayout_12 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_12.setObjectName("horizontalLayout_12")
+        self.label_17 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_17.setObjectName("label_17")
+        self.horizontalLayout_12.addWidget(self.label_17)
+        self.doubleSpinBox_5 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_5.setObjectName("doubleSpinBox_5")
+        self.horizontalLayout_12.addWidget(self.doubleSpinBox_5)
+        self.label_41 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_41.setObjectName("label_41")
+        self.horizontalLayout_12.addWidget(self.label_41)
+        self.verticalLayout_3.addLayout(self.horizontalLayout_12)
+        self.pushButton_6 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_6.setObjectName("pushButton_6")
+        self.verticalLayout_3.addWidget(self.pushButton_6)
+        self.gridLayout.addLayout(self.verticalLayout_3, 2, 0, 1, 1)
+        self.verticalLayout = QtWidgets.QVBoxLayout()
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.label_25 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_25.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_25.setTextFormat(QtCore.Qt.TextFormat.MarkdownText)
+        self.label_25.setObjectName("label_25")
+        self.verticalLayout.addWidget(self.label_25)
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.horizontalLayout.setObjectName("horizontalLayout")
+        self.label = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label.setObjectName("label")
+        self.horizontalLayout.addWidget(self.label)
+        self.pushButton = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton.setEnabled(True)
+        self.pushButton.setCheckable(True)
+        self.pushButton.setObjectName("pushButton")
+        self.horizontalLayout.addWidget(self.pushButton)
+        self.verticalLayout.addLayout(self.horizontalLayout)
+        self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
+        self.label_2 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_2.setObjectName("label_2")
+        self.horizontalLayout_2.addWidget(self.label_2)
+        self.doubleSpinBox = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English, QtCore.QLocale.Country.Spain))
+        self.doubleSpinBox.setMinimum(-10.0)
+        self.doubleSpinBox.setMaximum(40.0)
+        self.doubleSpinBox.setObjectName("doubleSpinBox")
+        self.horizontalLayout_2.addWidget(self.doubleSpinBox)
+        self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.label_3 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_3.setObjectName("label_3")
+        self.horizontalLayout_3.addWidget(self.label_3)
+        self.label_4 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_4.setObjectName("label_4")
+        self.horizontalLayout_3.addWidget(self.label_4)
+        self.horizontalLayout_2.addLayout(self.horizontalLayout_3)
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
+        self.pushButton_3 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_3.setObjectName("pushButton_3")
+        self.verticalLayout.addWidget(self.pushButton_3)
+        self.horizontalLayout_4 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
+        self.label_5 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_5.setObjectName("label_5")
+        self.horizontalLayout_4.addWidget(self.label_5)
+        self.doubleSpinBox_2 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_2.setMaximum(3.0)
+        self.doubleSpinBox_2.setObjectName("doubleSpinBox_2")
+        self.horizontalLayout_4.addWidget(self.doubleSpinBox_2)
+        self.label_38 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_38.setObjectName("label_38")
+        self.horizontalLayout_4.addWidget(self.label_38)
+        self.verticalLayout.addLayout(self.horizontalLayout_4)
+        self.horizontalLayout_18 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_18.setObjectName("horizontalLayout_18")
+        self.label_30 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_30.setObjectName("label_30")
+        self.horizontalLayout_18.addWidget(self.label_30)
+        self.label_12 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_12.setObjectName("label_12")
+        self.horizontalLayout_18.addWidget(self.label_12)
+        self.verticalLayout.addLayout(self.horizontalLayout_18)
+        self.pushButton_4 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_4.setObjectName("pushButton_4")
+        self.verticalLayout.addWidget(self.pushButton_4)
+        self.gridLayout.addLayout(self.verticalLayout, 0, 0, 1, 1)
+        self.verticalLayout_5 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_5.setObjectName("verticalLayout_5")
+        self.gridLayout.addLayout(self.verticalLayout_5, 2, 1, 1, 1)
+        self.verticalLayout_6 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_6.setObjectName("verticalLayout_6")
+        self.label_37 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_37.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_37.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.label_37.setObjectName("label_37")
+        self.verticalLayout_6.addWidget(self.label_37)
+        self.horizontalLayout_CH = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_CH.setObjectName("horizontalLayout_CH")
+        self.pushButton_CH1 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_CH1.setCheckable(True)
+        self.pushButton_CH1.setObjectName("pushButton_CH1")
+        self.horizontalLayout_CH.addWidget(self.pushButton_CH1)
+        # Button for channel selection
+        self.pushButton_CH6 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_CH6.setCheckable(True)
+        self.pushButton_CH6.setObjectName("pushButton_CH6")
+        self.horizontalLayout_CH.addWidget(self.pushButton_CH6)
+        self.pushButton_CHAuto = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_CHAuto.setCheckable(True)
+        self.pushButton_CHAuto.setObjectName("pushButton_CHAuto")
+        self.horizontalLayout_CH.addWidget(self.pushButton_CHAuto)
+        self.verticalLayout_6.addLayout(self.horizontalLayout_CH)
+        self.verticalLayout_7 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_7.setObjectName("verticalLayout_7")
+        self.label_42 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_42.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_42.setObjectName("label_42")
+        self.verticalLayout_7.addWidget(self.label_42)
+        self.horizontalLayout_23 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_23.setObjectName("horizontalLayout_23")
+        self.label_43 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_43.setObjectName("label_43")
+        self.horizontalLayout_23.addWidget(self.label_43)
+        self.doubleSpinBox_11 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_11.setObjectName("doubleSpinBox_11")
+        self.horizontalLayout_23.addWidget(self.doubleSpinBox_11)
+        self.label_44 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_44.setObjectName("label_44")
+        self.horizontalLayout_23.addWidget(self.label_44)
+        self.doubleSpinBox_12 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_12.setObjectName("doubleSpinBox_12")
+        self.horizontalLayout_23.addWidget(self.doubleSpinBox_12)
+        self.label_45 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_45.setObjectName("label_45")
+        self.horizontalLayout_23.addWidget(self.label_45)
+        self.doubleSpinBox_13 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_13.setDecimals(0)
+        self.doubleSpinBox_13.setMaximum(100.0)
+        self.doubleSpinBox_13.setProperty("value", 5.0)
+        self.doubleSpinBox_13.setObjectName("doubleSpinBox_13")
+        self.horizontalLayout_23.addWidget(self.doubleSpinBox_13)
+        self.verticalLayout_7.addLayout(self.horizontalLayout_23)
+        self.verticalLayout_6.addLayout(self.verticalLayout_7)
+        self.horizontalLayout_24 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_24.setObjectName("horizontalLayout_24")
+        self.label_46 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_46.setObjectName("label_46")
+        self.horizontalLayout_24.addWidget(self.label_46)
+        self.check_powermeter = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.check_powermeter.setObjectName("Check Power Meter")
+        self.horizontalLayout_24.addWidget(self.check_powermeter)
+        self.check_powermeter_2 = QtWidgets.QCheckBox(parent=self.gridLayoutWidget)
+        self.check_powermeter_2.setObjectName("checkBox_2")
+        self.horizontalLayout_24.addWidget(self.check_powermeter_2)
+        self.verticalLayout_6.addLayout(self.horizontalLayout_24)
+        self.pushButton_13 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_13.setObjectName("pushButton_13")
+        self.verticalLayout_6.addWidget(self.pushButton_13)
+        self.gridLayout.addLayout(self.verticalLayout_6, 0, 2, 1, 1)
+        # --------------------------------------
+        # init pyqtgraphs
+        # --------------------------------------
+        self.tec_temperature_graph = PlotWidget(parent=self.gridLayoutWidget)
+        self.tec_temperature_graph.setMinimumSize(QtCore.QSize(200, 200))
+        self.tec_temperature_graph.setObjectName("tec_temperature_graph")
+        self.tec_current_graph = PlotWidget(parent=self.gridLayoutWidget)
+        self.tec_current_graph.setMinimumSize(QtCore.QSize(200, 200))
+        self.tec_current_graph.setObjectName("tec_current_graph")
+        self.gridLayout.addWidget(self.tec_temperature_graph, 2, 1, 1, 1)
+        self.gridLayout.addWidget(self.tec_current_graph, 2, 2, 1, 1)
+        # ----------------------------------------
+        # end init pyqtgraphs
+        # ----------------------------------------
+        self.verticalLayout_2 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        self.label_26 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_26.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_26.setFrameShadow(QtWidgets.QFrame.Shadow.Plain)
+        self.label_26.setObjectName("label_26")
+        self.verticalLayout_2.addWidget(self.label_26)
+        self.horizontalLayout_17 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_17.setObjectName("horizontalLayout_17")
+        self.label_29 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_29.setObjectName("label_29")
+        self.horizontalLayout_17.addWidget(self.label_29)
+        self.comboBox_2 = QtWidgets.QComboBox(parent=self.gridLayoutWidget)
+        self.comboBox_2.setObjectName("comboBox_2")
+        self.horizontalLayout_17.addWidget(self.comboBox_2)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_17)
+        self.horizontalLayout_5 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
+        self.label_6 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_6.setObjectName("label_6")
+        self.horizontalLayout_5.addWidget(self.label_6)
+        self.comboBox = QtWidgets.QComboBox(parent=self.gridLayoutWidget)
+        self.comboBox.setObjectName("comboBox")
+        self.horizontalLayout_5.addWidget(self.comboBox)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_5)
+        self.horizontalLayout_6 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_6.setObjectName("horizontalLayout_6")
+        self.label_7 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_7.setObjectName("label_7")
+        self.horizontalLayout_6.addWidget(self.label_7)
+        self.doubleSpinBox_7 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_7.setMaximum(10000.0)
+        self.doubleSpinBox_7.setObjectName("doubleSpinBox_7")
+        self.horizontalLayout_6.addWidget(self.doubleSpinBox_7)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_6)
+        self.horizontalLayout_7 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_7.setObjectName("horizontalLayout_7")
+        self.label_8 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_8.setObjectName("label_8")
+        self.horizontalLayout_7.addWidget(self.label_8)
+        self.doubleSpinBox_9 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_9.setMaximum(100000.0)
+        self.doubleSpinBox_9.setObjectName("doubleSpinBox_9")
+        self.horizontalLayout_7.addWidget(self.doubleSpinBox_9)
+        self.label_9 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_9.setObjectName("label_9")
+        self.horizontalLayout_7.addWidget(self.label_9)
+        self.label_10 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_10.setObjectName("label_10")
+        self.horizontalLayout_7.addWidget(self.label_10)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_7)
+        self.horizontalLayout_8 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_8.setObjectName("horizontalLayout_8")
+        self.label_11 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_11.setObjectName("label_11")
+        self.horizontalLayout_8.addWidget(self.label_11)
+        self.doubleSpinBox_8 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_8.setObjectName("doubleSpinBox_8")
+        self.horizontalLayout_8.addWidget(self.doubleSpinBox_8)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_8)
+        self.pushButton_5 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_5.setObjectName("pushButton_5")
+        self.verticalLayout_2.addWidget(self.pushButton_5)
+        self.gridLayout.addLayout(self.verticalLayout_2, 1, 0, 1, 1)
+        self.verticalLayout_4 = QtWidgets.QVBoxLayout()
+        self.verticalLayout_4.setObjectName("verticalLayout_4")
+        self.label_laser_control_ch6 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_laser_control_ch6.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.label_laser_control_ch6.setObjectName("label_laser_control_ch6")
+        self.verticalLayout_4.addWidget(self.label_laser_control_ch6)
+        self.horizontalLayout_21 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_21.setObjectName("horizontalLayout_21")
+        self.label_36 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_36.setObjectName("label_36")
+        self.horizontalLayout_21.addWidget(self.label_36)
+        self.pushButton_10 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_10.setObjectName("pushButton_10")
+        self.horizontalLayout_21.addWidget(self.pushButton_10)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_21)
+        self.horizontalLayout_19 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_19.setObjectName("horizontalLayout_19")
+        self.label_13 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_13.setObjectName("label_13")
+        self.horizontalLayout_19.addWidget(self.label_13)
+        self.comboBox_3 = QtWidgets.QComboBox(parent=self.gridLayoutWidget)
+        self.comboBox_3.setObjectName("comboBox_3")
+        self.horizontalLayout_19.addWidget(self.comboBox_3)
+        self.label_32 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_32.setObjectName("label_32")
+        self.horizontalLayout_19.addWidget(self.label_32)
+        self.label_33 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_33.setObjectName("label_33")
+        self.horizontalLayout_19.addWidget(self.label_33)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_19)
+        self.horizontalLayout_20 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_20.setObjectName("horizontalLayout_20")
+        self.label_31 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_31.setObjectName("label_31")
+        self.horizontalLayout_20.addWidget(self.label_31)
+        self.comboBox_4 = QtWidgets.QComboBox(parent=self.gridLayoutWidget)
+        self.comboBox_4.setObjectName("comboBox_4")
+        self.horizontalLayout_20.addWidget(self.comboBox_4)
+        self.label_34 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_34.setObjectName("label_34")
+        self.horizontalLayout_20.addWidget(self.label_34)
+        self.label_35 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_35.setObjectName("label_35")
+        self.horizontalLayout_20.addWidget(self.label_35)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_20)
+        self.pushButton_9 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_9.setObjectName("pushButton_9")
+        self.verticalLayout_4.addWidget(self.pushButton_9)
+        self.horizontalLayout_13 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_13.setObjectName("horizontalLayout_13")
+        self.label_18 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_18.setObjectName("label_18")
+        self.horizontalLayout_13.addWidget(self.label_18)
+        self.doubleSpinBox_10 = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_10.setMaximum(3.0)
+        self.doubleSpinBox_10.setSingleStep(0.01)
+        self.doubleSpinBox_10.setObjectName("doubleSpinBox_10")
+        self.horizontalLayout_13.addWidget(self.doubleSpinBox_10)
+        self.label_24 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_24.setObjectName("label_24")
+        self.horizontalLayout_13.addWidget(self.label_24)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_13)
+        self.pushButton_8 = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.pushButton_8.setObjectName("pushButton_8")
+        self.verticalLayout_4.addWidget(self.pushButton_8)
+        self.horizontalLayout_14 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_14.setObjectName("horizontalLayout_14")
+        self.label_19 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_19.setObjectName("label_19")
+        self.horizontalLayout_14.addWidget(self.label_19)
+        self.doubleSpinBox_laser_current_limit = QtWidgets.QDoubleSpinBox(parent=self.gridLayoutWidget)
+        self.doubleSpinBox_laser_current_limit.setMaximum(3.0)
+        self.doubleSpinBox_laser_current_limit.setSingleStep(0.01)
+        self.doubleSpinBox_laser_current_limit.setObjectName("doubleSpinBox_laser_current_limit")
+        self.horizontalLayout_14.addWidget(self.doubleSpinBox_laser_current_limit)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_14)
+        self.laser_current_limit_button = QtWidgets.QPushButton(parent=self.gridLayoutWidget)
+        self.laser_current_limit_button.setObjectName("laser_current_limit_button")
+        self.verticalLayout_4.addWidget(self.laser_current_limit_button)
+        self.horizontalLayout_15 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_15.setObjectName("horizontalLayout_15")
+        self.label_20 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_20.setObjectName("label_20")
+        self.horizontalLayout_15.addWidget(self.label_20)
+        self.label_21 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_21.setObjectName("label_21")
+        self.horizontalLayout_15.addWidget(self.label_21)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_15)
+        self.horizontalLayout_16 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_16.setObjectName("horizontalLayout_16")
+        self.label_22 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_22.setObjectName("label_22")
+        self.horizontalLayout_16.addWidget(self.label_22)
+        self.label_23 = QtWidgets.QLabel(parent=self.gridLayoutWidget)
+        self.label_23.setObjectName("label_23")
+        self.horizontalLayout_16.addWidget(self.label_23)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_16)
+        self.gridLayout.addLayout(self.verticalLayout_4, 0, 1, 1, 1)
+        # PRO8000_GUI.setCentralWidget(self.centralwidget)
+        # self.menubar = QtWidgets.QMenuBar(parent=PRO8000_GUI)
+        # self.menubar.setGeometry(QtCore.QRect(0, 0, 1260, 33))
+        # self.menubar.setObjectName("menubar")
+        # PRO8000_GUI.setMenuBar(self.menubar)
+        # self.statusbar = QtWidgets.QStatusBar(parent=PRO8000_GUI)
+        # self.statusbar.setObjectName("statusbar")
+        # PRO8000_GUI.setStatusBar(self.statusbar)
+
+        self.retranslateUi()
+        QtCore.QMetaObject.connectSlotsByName(self)
+
+        # ----------------------
+        #      CUSTOM
+        # ----------------------
+
+        self.instrument = instrument
+        self.powermeter_detected = False
+        self.powermeter_graph_created = False
+        self.acquisition_mode = AcquisitionMode.MANUAL_CH1
+        self.instrument.select_slot(PRO_8000.Slot.SLOT1)
+
+        # -----------------------------
+        #      INITIATE THREADS
+        # -----------------------------
+        self.worker_thread = QtCore.QThread()
+        self.worker = MeasurementWorker()
+        self.worker.instrument = self.instrument
+
+        self.worker.moveToThread(self.worker_thread)
+        self.worker.read_temperature_ready.connect(self.update_temperature)
+
+        # read requests
+        self.worker.read_temperature_requested.connect(self.worker.read_temperature)
+        self.worker.read_tec_requested.connect(self.worker.read_tec)
+
+        self.worker.read_pid_settings_ready.connect(self.update_pid)
+        self.worker.read_vte_voltage_ready.connect(self.update_tec_voltage_slot1)
+        self.worker.read_itec_current_ready.connect(self.update_tec_current_slot1)
+
+        self.worker.read_polarities_ready.connect(self.update_polarities)
+        self.worker.polarity_applied_ready.connect(self.worker.read_polarities)
+        self.worker.read_diode_current_ready_old.connect(self.update_diode_current)
+        self.worker.read_diode_current_ready.connect(self.update_diode_current)
+        self.worker.read_vld_ready.connect(self.update_vld)
+        self.worker.read_tec_soft_current_limit_ready.connect(self.update_tec_soft_current_limit)
+        self.worker.read_hardware_current_limit_ready.connect(self.update_hard_current_limit)
+
+        self.worker_thread.start()
+
+        # -----------------------------------------
+        #     Buttons & Apply Values Connections
+        # -----------------------------------------
+
+        # Apply Values
+        self.worker.apply_polarity_requested.connect(self.worker.apply_polarities)
+        self.worker.apply_pid_requested.connect(self.worker.apply_pid)
+        self.worker.apply_diode_current_ch6_requested.connect(self.worker.apply_diode_current_ch6)
+        self.worker.apply_diode_current_ch4_requested.connect(self.worker.apply_diode_current_ch4)
+        self.worker.apply_diode_current_ch6_limit_requested.connect(self.worker.apply_diode_current_ch6_limit)
+        self.worker.apply_diode_current_ch4_limit_requested.connect(self.worker.apply_diode_current_ch4_limit)
+        self.worker.apply_temperature_requested.connect(self.worker.apply_temperature)
+        self.worker.apply_tec_soft_current_limit_requested.connect(self.worker.apply_tec_current_soft_limit)
+
+
+        # Apply Value trigger read
+        self.worker.apply_pid_changed.connect(self.worker.read_pid_settings)
+        self.worker.apply_tec_soft_current_limit_changed.connect(self.worker.read_tec_soft_current_limit)
+
+        # create powermeter
+        self.check_powermeter.clicked.connect(self.worker.apply_create_powermeter)
+        self.worker.check_powermeter_ready.connect(self.create_powermeter)
+        # Connection of the buttons
+        self.pushButton.setCheckable(True)
+        self.pushButton.clicked.connect(self.toogle_tec)
+        self.pushButton_2.setCheckable(True)
+        self.pushButton_2.clicked.connect(self.toogle_pid_sharei)
+        self.laser_current_limit_button.clicked.connect(
+            lambda: self.worker.apply_diode_current_ch6_limit_requested.emit(self.doubleSpinBox_laser_current_limit.value()))
+        self.pushButton_8.clicked.connect(
+            lambda: self.worker.apply_diode_current_ch6_requested.emit(self.doubleSpinBox_10.value()))
+        self.pushButton_9.clicked.connect(
+            lambda: self.worker.apply_polarity_requested.emit(self.comboBox_4.currentText(),
+                                                              self.comboBox_3.currentText(), 6))
+        self.pushButton_3.clicked.connect(
+            lambda: self.worker.apply_temperature_requested.emit(self.doubleSpinBox.value()))
+        self.pushButton_5.clicked.connect(self.apply_sensor_settings)
+        self.pushButton_4.clicked.connect(lambda: self.worker.apply_tec_soft_current_limit_requested.emit(self.doubleSpinBox_2.value()))
+        self.pushButton_6.clicked.connect(lambda: self.worker.apply_pid_requested.emit(self.doubleSpinBox_3.value(), self.doubleSpinBox_4.value(), self.doubleSpinBox_5.value()))
+        self.pushButton_10.clicked.connect(self.toogle_ld)
+        self.pushButton_CH1.clicked.connect(self.activate_channel_tec)
+        self.pushButton_CH6.clicked.connect(self.activate_channel_ld)
+        self.pushButton_CHAuto.clicked.connect(self.activate_channel_auto)
+        self.comboBox.addItems([s.value for s in self.instrument.Sensor])
+        self.comboBox_3.addItems([p.value for p in self.instrument.Polarity])
+        self.comboBox_4.addItems([p.value for p in self.instrument.Polarity])
+        self.comboBox_2.addItems([c.value for c in self.instrument.Calibration])
+
+        self.pushButton_13.clicked.connect(self.measure_current_sweep)
+
+        # ------------------------------------
+        #    LD CONTROLER CHANNEL 4
+        # ------------------------------------
+        try:
+            self.ld_controler_ch4 = LDControlerWidget(instrument=self.instrument, parent=self, channel=4)
+            self.gridLayout.addWidget(self.ld_controler_ch4, 1, 1, 1, 1)
+        finally:
+            self.worker.active_channels.append(self.ld_controler_ch4.slot_number)
+
+        # --------------------------------
+        #    WIDGET Modifications
+        # -------------------------------
+        self.doubleSpinBox.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_2.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_3.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_4.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_5.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_laser_current_limit.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_7.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_8.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_9.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_10.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_11.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+        self.doubleSpinBox_12.setLocale(QtCore.QLocale(QtCore.QLocale.Language.English))
+
+        self.doubleSpinBox.setValue(25)
+        #PID
+        self.doubleSpinBox_3.setSingleStep(0.1)
+        self.doubleSpinBox_4.setSingleStep(0.1)
+        self.doubleSpinBox_5.setSingleStep(0.1)
+
+        self.doubleSpinBox_7.setValue(3930)
+        self.doubleSpinBox_8.setValue(25)
+        self.doubleSpinBox_9.setValue(10000)
+        self.doubleSpinBox_10.setDecimals(4)
+
+        # Sweep
+        self.doubleSpinBox_11.setSingleStep(0.1)
+        self.doubleSpinBox_12.setSingleStep(0.1)
+        self.doubleSpinBox_11.setDecimals(3)
+        self.doubleSpinBox_12.setDecimals(3)
+
+        # PYQTGRAPH : Measure TEC temp over time
+        self.tec_temperature_graph.setWindowTitle("Temperature vs Time")
+        self.tec_current_graph.setWindowTitle("Current vs Time")
+        self.tec_temperature_graph.setLabel("left", "Temperature [degC]")
+        self.tec_temperature_graph.setLabel("bottom", "Time", units="s")
+        self.tec_current_graph.setLabel("left", "TEC Current/Voltage [A/V]")
+        self.tec_current_graph.setLabel("bottom", "Time", units="s")
+        self.tec_temperature_graph.showGrid(x=True, y=True)
+        self.tec_current_graph.showGrid(x=True, y=True)
+
+        # Curve for TEC temperature
+        self.curve_temp = self.tec_temperature_graph.plot(
+            pen=pg.mkPen(color="green", width=2)
+        )
+        # Curve for TEC current and voltage
+        self.tec_current_graph.addLegend()
+
+        self.curve_tec_current = self.tec_current_graph.plot(
+            pen=pg.mkPen(color="red", width=2), name="TEC Current [mA]"
+        )
+        self.curve_tec_voltage = self.tec_current_graph.plot(
+            pen=pg.mkPen(color="yellow", width=2), name="TEC Voltage [mV]"
+        )
+        self.time = []
+        self.tec_current = []
+        self.tec_voltage = []
+        self.temp = []
+        self.power = []
+        self.start_time = time.monotonic()
+        # channel buttons
+        self.pushButton_CH1.setChecked(True)
+        self.pushButton_CH6.setChecked(False)
+        self.pushButton_10.setCheckable(True)
+        # --------------------
+        #       QTIMER
+        # --------------------
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.periodic_update)
+
+        # -------------------------
+        #      DEFAULT VALUES
+        # -------------------------
+        self.set_default()
+        # start timer at the end
+        self.timer.start(500)  # 100 ms = 10 measurements/sec
+
+    # -------------------
+    #   periodic update
+    # -------------------
+    def set_default(self):
+        """apply default values for PRO8000 after GUI class instantiation."""
+        from dazzle_project.gui import PRO8000_DEFAULT_VALUES
+        # check if tec is on
+        if self.instrument.tec_enabled:
+            self.pushButton.setText("ON")
+            self.pushButton.setStyleSheet("background-color: green;")
+        else :
+            self.pushButton.setText("OFF")
+            self.pushButton.setStyleSheet("background-color: red;")
+
+        self.toogle_pid_sharei(True)
+
+        print("Setting default values")
+        for def_key, def_val in PRO8000_DEFAULT_VALUES.items():
+            print(f"{def_key} : {def_val}")
+
+            if "set_tenperature" in def_key :
+                self.worker.apply_temperature(def_val)
+                self.doubleSpinBox.setValue(def_val)
+            elif "tec_current_limit" in def_key :
+                self.worker.apply_tec_current_soft_limit(def_val)
+                self.doubleSpinBox_2.setValue(def_val)
+                sleep(0.2)
+            elif "polarity_ch6" in def_key:
+                sleep(0.2)
+                self.worker.apply_polarities(def_val[0], def_val[1], channel=6)
+                self.comboBox_3.setCurrentText(def_val[0])
+                self.comboBox_4.setCurrentText(def_val[1])
+            elif "slot6_enable" in def_key:
+                sleep(0.2)
+                self.toogle_ld(def_val)
+            elif "pid" in def_key:
+                self.instrument.set_i_share_on()
+                sleep(0.2)
+                self.worker.apply_pid(def_val[0], def_val[1], def_val[2])
+                sleep(0.2)
+                self.doubleSpinBox_3.setValue(def_val[0])
+                self.doubleSpinBox_4.setValue(def_val[1])
+                self.doubleSpinBox_5.setValue(def_val[2])
+
+
+
+    def create_powermeter(self):
+        print("check powermeter")
+        if self.parent is not None and not self.powermeter_detected:
+            for inst in self.parent.instruments:
+                if "2835-C" in inst["model"]:
+                    print("creating powermeter")
+                    self.worker.powermeter = inst["instrument"]
+                    # this goes into the function inside the gui
+                    self.powermeter_detected = True
+                    self.power_graph = PlotWidget(parent=self.gridLayoutWidget)
+                    self.gridLayout.addWidget(self.power_graph, 1, 2, 1, 1)
+                    self.power_graph.setMinimumSize(QtCore.QSize(200, 200))
+                    self.power_graph.setObjectName("power_graph")
+                    self.power_graph.setLabel("left", "Power [mW]")
+                    self.power_graph.setLabel("bottom", "Time", units="s")
+                    self.power_graph.showGrid(x=True, y=True)
+                    # curve power
+                    self.curve_power = self.power_graph.plot(
+                        pen=pg.mkPen(color="blue", width=2)
+                    )
+                    self.power_graph.show()
+                    self.main_layout.update()
+                    self.update()
+
+                    self.powermeter_graph_created = True
+                    self.worker.powermeter_created = True
+        else :
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Warning !",
+                f"No powermeter found"
+            )
+
+
+    def periodic_update(self):
+
+        if self.acquisition_mode == AcquisitionMode.AUTO:
+            self.worker.auto_read_cycle()
+
+        elif self.acquisition_mode == AcquisitionMode.MANUAL_CH1:
+            self.worker.read_temperature_requested.emit()
+            self.worker.read_tec_requested.emit()
+
+        elif self.acquisition_mode == AcquisitionMode.MANUAL_CH6:
+            self.worker.read_diode_current_old()
+            self.worker.read_vld_voltage(6)
+            self.worker.read_hard_current_limit(6)
+
+            # for ch in self.worker.active_channels:
+            #     laser_slot = self.instrument.Slot(ch)
+            #     self.instrument.select_slot(laser_slot)
+            #     self.worker.read_diode_current(ch)
+            #     self.worker.read_vld_voltage(ch)
+            #     self.worker.read_hard_current_limit(ch)
+            #
+            # self.instrument.select_slot(self.instrument.Slot(6))
+
+        if self.powermeter_detected and self.powermeter_graph_created and self.worker.powermeter_created:
+            self.worker.read_powermeter()
+
+        # --------------------
+        #   INPUT FUNCTIONS
+        # --------------------
+
+    def toogle_tec(self, checked):
+
+        if checked:
+            self.pushButton.setText("ON")
+            self.pushButton.setStyleSheet("background-color: green;")
+            self.instrument.tec_on()
+        else:
+            if not self.instrument.laser_enabled_ch6:
+                self.pushButton.setText("OFF")
+                self.pushButton.setStyleSheet("background-color: red;")
+                self.instrument.tec_off()
+            else :
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Warning !",
+                    f"Please Turn off laser before TEC"
+                )
+
+    def activate_channel_tec(self, checked):
+
+        if checked:
+            self.acquisition_mode = AcquisitionMode.MANUAL_CH1
+            self.pushButton_CH1.setChecked(True)
+            self.instrument.select_slot(self.instrument.Slot.SLOT1)
+            self.pushButton_CH6.setChecked(False)
+            self.pushButton_CHAuto.setChecked(False)
+
+    def activate_channel_ld(self, checked):
+
+        if checked:
+            self.acquisition_mode = AcquisitionMode.MANUAL_CH6
+            self.pushButton_CH6.setChecked(True)
+            self.instrument.select_slot(self.instrument.Slot.SLOT6)
+            print("activate channel ld, slot is " + str(self.instrument.current_slot))
+            self.pushButton_CH1.setChecked(False)
+            self.pushButton_CHAuto.setChecked(False)
+
+    def activate_channel_auto(self, checked):
+
+        if checked:
+            self.acquisition_mode = AcquisitionMode.AUTO
+
+            self.pushButton_CHAuto.setChecked(True)
+            self.pushButton_CH1.setChecked(False)
+            self.pushButton_CH6.setChecked(False)
+
+    def toogle_ld(self, checked):
+
+        print("toggle_ld:", checked)
+        if checked:
+            print("toogle ld on")
+            self.pushButton_10.setText("ON")
+            self.pushButton_10.setStyleSheet("background-color: green;")
+            self.instrument.set_ld_on_ch6()
+        else:
+            print("toogle ld off")
+            self.pushButton_10.setText("OFF")
+            self.pushButton_10.setStyleSheet("background-color: red;")
+            self.instrument.set_ld_off_ch6()
+
+    def toogle_pid_sharei(self, checked):
+
+        if checked:
+            self.pushButton_2.setText("ON")
+            self.pushButton_2.setStyleSheet("background-color: green;")
+            self.instrument.set_i_share_on()
+        else:
+            self.pushButton_2.setText("OFF")
+            self.pushButton_2.setStyleSheet("background-color: red;")
+            self.instrument.set_i_share_off()
+
+    def apply_temperature(self):
+        """apply tempearture for TEC."""
+        select_temp = self.doubleSpinBox.value()
+        self.instrument.set_temperature(select_temp)
+
+    def apply_tec_current_limit(self):
+        """apply TEC current limit."""
+        select_current_limit = self.doubleSpinBox_2.value()
+        self.instrument.set_tec_software_limit(select_current_limit)
+
+    def apply_sensor_settings(self):
+        """apply sensor settings."""
+        value = self.comboBox.currentText()
+        selected_sensor = self.instrument.Sensor(value)
+        self.instrument.set_sensor(selected_sensor)
+
+
+        # --------------------------
+        #     READ FUNCTIONS
+        # --------------------------
+
+    def update_temperature(self, result):
+        self.label_4.setText(f"{result:.4f} [ºC]")
+        self.update_temperature_plot()
+
+    def update_pid(self, p_value, d_value, i_value):
+        print("update pid")
+        self.label_39.setText(f"Read P: {p_value:.1f} [%]")
+        self.label_40.setText(f"Read D: {d_value:.1f} [%]")
+        self.label_41.setText(f"Read I: {i_value:.1f} [%]")
+
+    def update_tec_current_slot1(self, result):
+        self.label_30.setText(f"{result:.4f} [A]")
+
+    def update_tec_voltage_slot1(self, result):
+        self.label_12.setText(f"TEC Voltage VTE : {result:.4f} [V]")
+
+    def update_tec_soft_current_limit(self, result):
+        self.label_38.setText(f"limit read: {result:.4f} [A]")
+    def update_resistance_sensor(self, result):
+        self.label_10.setText(f"{result:.2f} [Ohm]")
+
+    def update_polarities(self, pd_pol, ld_pol, channel=6):
+        # print("update pd polarity " + result)
+        self.label_35.setText(pd_pol)
+        self.label_33.setText(ld_pol)
+        if channel == 4:
+            self.ld_controler_ch4.ld_read.setText(ld_pol)
+            self.ld_controler_ch4.pd_read.setText(pd_pol)
+
+
+    def update_diode_current(self, result, channel=6):
+        # print("Updating read diode current in the GUI channel", channel)
+        if channel == 6:
+            self.label_24.setText(f"Current : {result:.4f} [A]")
+        elif channel == 4:
+            self.ld_controler_ch4.current_read.setText(f"Current : {result:.4f} [A]")
+
+    def update_hard_current_limit(self, result, channel):
+        if channel==6:
+            self.label_21.setText(f"{result:.4f} [A]")
+        elif channel==4:
+            self.ld_controler_ch4.hard_limit_label.setText(f"{result:.4f} [A]")
+
+    # def update_diode_current_limit(self, result):
+    #     self.label_38.setText(f"limit read: {result:.4f} [A]")
+
+    def update_vld(self, result, channel):
+        if channel == 6:
+            self.label_23.setText(f"{result:.4f} [V]")
+        elif channel == 4:
+            self.ld_controler_ch4.vld_label.setText(f"{result:.4f} [V]")
+
+    def update_all(self, temperature, tec_voltage, itec_current, polarity):
+        self.update_temperature(temperature)
+        self.update_tec_voltage_slot1(tec_voltage)
+        self.update_tec_current_slot1(itec_current)
+        self.update_pd_polarity(polarity)
+
+        # def read_all_values(self):
+        #     self.read_temperature()
+        #     # self.read_tec_current_slot6()
+        #     self.read_tec_voltage_slot1()
+        #     # self.update_resistance_sensor()
+        #     # self.read_laser_polarity()
+        #     # self.read_ld_polarity()
+
+        # ---------------------------
+        # PYQTGPRAPH Functions
+        # --------------------------
+    MAX_TIME = 1800
+
+    def update_temperature_plot(self):
+
+        # Time since program started
+        elapsed = time.monotonic() - self.start_time
+
+        # Reset after MAX TIME
+        cutoff = elapsed - self.MAX_TIME
+        while self.time and self.time[0] < cutoff:
+            self.time.pop(0)
+            self.temp.pop(0)
+            self.tec_current.pop(0)
+            self.tec_voltage.pop(0)
+            if self.powermeter_graph_created:
+                self.power.pop(0)
+
+        # Store data
+        self.time.append(elapsed)
+        self.temp.append(self.worker.current_temperature)
+        self.tec_current.append(self.worker.current_ite_current * 1000) # see results in mA
+        self.tec_voltage.append(self.worker.current_vte_voltage * 1000)
+        self.power.append(self.worker.current_power * 1000)
+
+        # Update graph
+        self.curve_temp.setData(self.time, self.temp)
+        self.curve_tec_current.setData(self.time, self.tec_current ) # convert to mili
+        self.curve_tec_voltage.setData(self.time, self.tec_voltage )
+        if self.powermeter_graph_created :
+            self.curve_power.setData(self.time, self.power)
+
+
+    # ------------------------------------
+    #     Quick measurement functions
+    # ------------------------------------
+    def measure_current_sweep(self):
+
+        print("Measurement sweep activated")
+        start = self.doubleSpinBox_11.value()
+        stop = self.doubleSpinBox_12.value()
+        npoints = int(self.doubleSpinBox_13.value())
+
+        powermeter = None
+        powermeter_model = True # if true your using the 2835 otherwise it is the 2936
+        measurement_info = {
+            "collimator" : "PAF2A-11C",
+            "pinhole"    : "P100HK_100um",
+            "detector"   : "818-UV"
+        }
+        laser = "25118553-BNT100"
+        path = r"I:\OP\OFERTAS\2024\A3-24-0010 TENSIS H2024 Olivier Saint Pe\6.Resultados\05. Dazzling\Setup\laser"
+        print("instantiate powermeter")
+        try:
+            # powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
+            if powermeter_model:
+                powermeter = NEWPORT_2835_C("GPIB0::6::INSTR")
+                model = "newport_2835_C"
+                sleep(2)
+                # channel A selection
+                powermeter.set_wavelength(powermeter.Channel.CHANNELB, 530)
+                # powermeter.set_wavelength(530, channel=powermeter.Channel.CHANNELB)
+            else :
+                powermeter = Newport_2936R()
+                model = "newport_2936R"
+                sleep(2)
+                # channel A selection
+                powermeter.write("PM:CHAN 2")
+                powermeter.set_wavelength(530)
+                # powermeter.set_wavelength(530, channel=powermeter.Channel.CHANNELB)
+        except Exception as e:
+
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Connection error",
+                f"Could not connect to instrument:\n\n{e}"
+            )
+
+        if not powermeter.connected:
+            powermeter = None
+
+        print(powermeter)
+
+        sweep = ParameterSweep({
+            "current": (start, stop, npoints),
+        })
+        # sweep = ParameterSweep(start, stop, npoints)
+
+        filename = ( path + "\\" +
+            f"{laser}_ld_sweep_{model}_"
+            f"{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
+        )
+
+        with open(filename, "w", newline="") as f:
+            writer = csv.writer(f)
+
+            writer.writerow([
+                "Model",
+                "laser",
+                "set_ld_current_A",
+                "read_current_A",
+                "temperature_avg_degC",
+                "temperature_std_degC",
+                "tec_current_avg_A",
+                "tec_current_std_A",
+                "tec_voltage_avg_A",
+                "tec_voltage_std_A",
+                "power_avg_W",
+                "power_std_W"
+            ] + list(measurement_info.keys()))
+
+            #
+            # Go to LD channel
+            #
+            self.instrument.select_slot(
+                self.instrument.Slot.SLOT6
+            )
+
+            self.toogle_ld(True)
+
+            # number of sampling for each measurement
+            WAIT_SETTLING = 300
+            WAIT_MEAS     = 10
+            N_MEASUREMENTS = 10
+
+            print(f"waiting {WAIT_SETTLING} s for settling")
+            sleep(WAIT_SETTLING)
+
+            for sw in sweep:
+                print(f"Setting current {sw["current"]:.4f} A")
+
+                #
+                # Apply current
+                #
+                self.instrument.set_diode_current(sw["current"])
+                read_ld_current = self.instrument.read_diode_current_slot6()
+                # Update laser current in gui
+                self.worker.read_diode_current_ready_old.emit(read_ld_current)
+                #
+                # Wait for settling
+                #
+                QtWidgets.QApplication.processEvents()
+                time.sleep(WAIT_MEAS)
+                model = ""
+                temperatures = []
+                powers = []
+                tec_currents = []
+                tec_voltages = []
+                for i in range(N_MEASUREMENTS):
+                    # wait
+                    #
+                    # Read temperature
+                    #
+                    self.instrument.select_slot(
+                        self.instrument.Slot.SLOT1
+                    )
+
+                    temperature = (
+                        self.instrument.read_temperature_slot1()
+                    )
+
+                    tec_current = ( self.instrument.read_tec_current_slot1())
+                    tec_voltage = ( self.instrument.read_tec_voltage_slot1() )
+
+                    # update readouts
+                    self.worker.read_temperature_ready.emit(temperature)
+                    self.worker.read_itec_current_ready.emit(tec_current)
+                    self.worker.read_vte_voltage_ready.emit(tec_voltage)
+
+                    print(f"temperature is : {temperature}")
+
+                    temperatures.append(temperature)
+                    tec_currents.append(tec_current)
+                    tec_voltages.append(tec_voltage)
+                    #
+                    # Dummy power reading
+                    #
+                    if powermeter is not None :
+                        if isinstance(powermeter, NEWPORT_2835_C):
+                            power = powermeter.read_single_power()
+                            model="newport_2835C"
+
+                        elif isinstance(powermeter, Newport_2936R):
+                            power = powermeter.read_single_power()
+                            print(f"Model : {model}, power : {power}")
+                            model = "newport_2936R"
+                        powers.append(power)
+                    else :
+                        power = 0
+                        powers.append(power)
+
+                    print(f"power is {power:.4f} W")
+
+
+
+                temp_avg = statistics.mean(temperatures)
+                temp_std = statistics.stdev(temperatures) \
+                    if len(temperatures) > 1 else 0.0
+                tec_current_avg = statistics.mean(tec_currents)
+                tec_current_std = statistics.stdev(tec_currents) \
+                    if len(temperatures) > 1 else 0.0
+                tec_voltage_avg = statistics.mean(tec_voltages)
+                tec_voltage_std = statistics.stdev(tec_voltages) \
+                    if len(temperatures) > 1 else 0.0
+                power_avg = statistics.mean(powers)
+                power_std = statistics.stdev(powers) \
+                    if len(powers) > 1 else 0.0
+                #
+                # Save
+                #
+                writer.writerow([
+                    laser,
+                    model,
+                    sw["current"],
+                    read_ld_current,
+                    temp_avg,
+                    temp_std,
+                    tec_current_avg,
+                    tec_current_std,
+                    tec_voltage_avg,
+                    tec_voltage_std,
+                    power_avg,
+                    power_std
+                ] + list(measurement_info.values()))
+                print(
+                    f"I={sw["current"]:.4f}A "
+                    f"T={temp_avg:.3f}+-{temp_std:.3f} °C "
+                    f"P={power_avg:.3f}+-{power_std:.3f} W"
+                )
+
+                #
+                # Return to LD channel
+                #
+                self.instrument.select_slot(
+                    self.instrument.Slot.SLOT6
+                )
+
+        self.toogle_ld(False)
+        self.activate_channel_tec(True)
+
+        print(f"Sweep saved to {filename}")
+
+    # ----------------
+    #   END CUSTOM
+    # ----------------
+
+    def retranslateUi(self):
+        _translate = QtCore.QCoreApplication.translate
+        self.setWindowTitle(_translate("PRO800_GUI", "PRO8000"))
+        self.label_27.setText(_translate("PRO8000_GUI", "PID CONTROL"))
+        self.label_14.setText(_translate("PRO8000_GUI", "Set P [%]"))
+        self.label_39.setText(_translate("PRO8000_GUI", "Read P : ---- [%]"))
+        self.label_15.setText(_translate("PRO8000_GUI", "Set D [%]"))
+        self.label_40.setText(_translate("PRO8000_GUI", "Read D : ---- [%]"))
+        self.label_16.setText(_translate("PRO8000_GUI", "Use I "))
+        self.pushButton_2.setText(_translate("PRO8000_GUI", "ON/OFF"))
+        self.label_17.setText(_translate("PRO8000_GUI", "Set I [%]"))
+        self.label_41.setText(_translate("PRO8000_GUI", "Read I : ---- [%]"))
+        self.pushButton_6.setText(_translate("PRO8000_GUI", "Apply PID settings"))
+        self.label_25.setText(_translate("PRO8000_GUI", "TEC CONTROL"))
+        self.label.setText(_translate("PRO8000_GUI", "TEC toogle"))
+        self.pushButton.setText(_translate("PRO8000_GUI", "ON/OFF"))
+        self.label_2.setText(_translate("PRO8000_GUI", "Set Temp [degC]"))
+        self.label_3.setText(_translate("PRO8000_GUI", "Read Tenp"))
+        self.label_4.setText(_translate("PRO8000_GUI", "---- [degC]"))
+        self.pushButton_3.setText(_translate("PRO8000_GUI", "Apply Temperature"))
+        self.label_5.setText(_translate("PRO8000_GUI", "Current Limit [A] "))
+        self.label_38.setText(_translate("PRO8000_GUI", "limit read : ---- [A]"))
+        self.label_30.setText(_translate("PRO8000_GUI", "Current : ---- [A]"))
+        self.label_12.setText(_translate("PRO8000_GUI", "TEC Volage VTE : Voltage ---- [V]"))
+        self.pushButton_4.setText(_translate("PRO8000_GUI", "Apply Current Limit"))
+        self.label_37.setText(_translate("PRO8000_GUI", "Channel Selector"))
+        self.pushButton_CH1.setText(_translate("PRO8000_GUI", "Channel 1 (TEC)"))
+        self.pushButton_CH6.setText(_translate("PRO8000_GUI", "Channel 6 (LD)"))
+        self.pushButton_CHAuto.setText(_translate("PRO8000_GUI", "Auto"))
+        self.label_42.setText(_translate("PRO8000_GUI", "Current Sweep"))
+        self.label_43.setText(_translate("PRO8000_GUI", "start"))
+        self.label_44.setText(_translate("PRO8000_GUI", "stop"))
+        self.label_45.setText(_translate("PRO8000_GUI", "npoints"))
+        self.label_46.setText(_translate("PRO8000_GUI", "Measure"))
+        self.check_powermeter.setText(_translate("PRO8000_GUI", "plot power"))
+        self.check_powermeter_2.setText(_translate("PRO8000_GUI", "temperature"))
+        self.pushButton_13.setText(_translate("PRO8000_GUI", "Apply Sweep"))
+        self.label_26.setText(_translate("PRO8000_GUI", "TEMPERATURE SENSOR"))
+        self.label_29.setText(_translate("PRO8000_GUI", "Calibration Method"))
+        self.label_6.setText(_translate("PRO8000_GUI", "Sensor Type"))
+        self.label_7.setText(_translate("PRO8000_GUI", "Set Bval [Ohm]"))
+        self.label_8.setText(_translate("PRO8000_GUI", "Set R0 [Ohm]"))
+        self.label_9.setText(_translate("PRO8000_GUI", "Read R"))
+        self.label_10.setText(_translate("PRO8000_GUI", "----- [Ohm]"))
+        self.label_11.setText(_translate("PRO8000_GUI", "Set T0 [degC]"))
+        self.pushButton_5.setText(_translate("PRO8000_GUI", "Apply Sensor Settings"))
+        self.label_laser_control_ch6.setText(_translate("PRO8000_GUI", "DIODE CONTROL Channel 6"))
+        self.label_36.setText(_translate("PRO8000_GUI", "Laser Toogle"))
+        self.pushButton_10.setText(_translate("PRO8000_GUI", "OFF"))
+        self.label_13.setText(_translate("PRO8000_GUI", "Laser Diode Polarity"))
+        self.label_32.setText(_translate("PRO8000_GUI", "Read Polarity :"))
+        self.label_33.setText(_translate("PRO8000_GUI", "--"))
+        self.label_31.setText(_translate("PRO8000_GUI", "Photo Diode Polarity"))
+        self.label_34.setText(_translate("PRO8000_GUI", "Read Polarity :"))
+        self.label_35.setText(_translate("PRO8000_GUI", "--"))
+        self.pushButton_9.setText(_translate("PRO8000_GUI", "Apply Polarity"))
+        self.label_18.setText(_translate("PRO8000_GUI", "Set diode current [A]"))
+        self.label_24.setText(_translate("PRO8000_GUI", "current : ---- [A]"))
+        self.pushButton_8.setText(_translate("PRO8000_GUI", "Apply LD current"))
+        self.label_19.setText(_translate("PRO8000_GUI", "Soft Current  Limit Imax [A]"))
+        self.laser_current_limit_button.setText(_translate("PRO8000_GUI", "Apply Current Limit"))
+        self.label_20.setText(_translate("PRO8000_GUI", "Read Hard Limit"))
+        self.label_21.setText(_translate("PRO8000_GUI", "----- [A]"))
+        self.label_22.setText(_translate("PRO8000_GUI", "Read VLD"))
+        self.label_23.setText(_translate("PRO8000_GUI", "----- [V]"))
+from pyqtgraph import PlotWidget
+
+
+if __name__ == "__main__":
+    import sys
+    import pyvisa
+    from dazzle_project.instruments.pro8000 import DummyPro8000, PRO_8000
+
+    dummy_enabled = True
+    if dummy_enabled:
+        pro8000 = DummyPro8000()
+    else :
+        rm = pyvisa.ResourceManager()
+        print(rm.list_resources())
+
+        pro8000 = PRO_8000("GPIB0::10::INSTR")
+
+        pro8000.query_id()
+
+    app = QtWidgets.QApplication(sys.argv)
+    MainWindow = QtWidgets.QMainWindow()
+    ui = PRO8000_GUI(pro8000)
+    MainWindow.setCentralWidget(ui)
+    MainWindow.show()
+    sys.exit(app.exec())
