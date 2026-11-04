@@ -35,7 +35,7 @@ class AcquisitionMode(Enum):
     AUTO = 3
 
 # ---------------------------------------
-#   LD Controler GUI
+#   LD Controler gui
 #----------------------------------------
 # Description :
 # Gui for the Laser/Diode drivers
@@ -189,10 +189,10 @@ class LDControlerWidget(InstrumentWidget):
 
 
 # ----------------------------------
-#      TEC CONTROLER GUI
+#      TEC CONTROLER gui
 # ----------------------------------
 # Description :
-# GUI for the TEC Controler located
+# gui for the TEC Controler located
 # on the slot 0 of the pro8000
 # device. Set the temperature and
 # read the temperature of the laser
@@ -1225,7 +1225,7 @@ class PRO8000_GUI(InstrumentWidget):
     #   periodic update
     # -------------------
     def set_default(self):
-        """apply default values for PRO8000 after GUI class instantiation."""
+        """apply default values for PRO8000 after gui class instantiation."""
         from dazzle_project.gui import PRO8000_DEFAULT_VALUES
         # check if tec is on
         if self.instrument.tec_enabled:
@@ -1454,7 +1454,7 @@ class PRO8000_GUI(InstrumentWidget):
 
 
     def update_diode_current(self, result, channel=6):
-        # print("Updating read diode current in the GUI channel", channel)
+        # print("Updating read diode current in the gui channel", channel)
         if channel == 6:
             self.label_24.setText(f"Current : {result:.4f} [A]")
         elif channel == 4:

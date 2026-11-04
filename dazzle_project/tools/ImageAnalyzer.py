@@ -248,7 +248,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
                 image = np.load(filename)
 
-                # When loading a .npy, you can automatically update the GUI:
+                # When loading a .npy, you can automatically update the gui:
                 rows, cols = image.shape
 
                 self.width_spin.setValue(cols)
