@@ -1,6 +1,10 @@
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
 import pyvisa
+from serial.tools import list_ports
+from serial import Serial, tools
+
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any
 
 from dazzle_project.instruments.equipment import Equipment
 from dazzle_project.instruments import get_instrument_class
@@ -10,7 +14,8 @@ from dazzle_project.gui import get_instrument_gui_class
 @dataclass
 class InstrumentInfo:
     resource_name: str
-    connection_type : Optional[str] = None
+    connection_type : str
+    connection_kwargs : dict[str, Any] = field(default_factory=dict)
     address : Optional[int] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
@@ -33,7 +38,110 @@ class EquipmentManager:
         self.rm = pyvisa.ResourceManager(visa_backend)
         self.instruments: Dict[str, InstrumentInfo] = {}
 
-    def scan(self) -> Dict[str, InstrumentInfo]:
+    def scan_serial(self):
+
+        for port in tools.list_ports.comports():
+
+            info = self._identify_serial_resource(
+                port.device
+            )
+
+            if info:
+                self.instruments[port.device] = info
+
+    def _identify_serial_resource(
+            self,
+            port: str,
+            baudrate: int = 9600
+    ) -> InstrumentInfo:
+        """Attempt to identify a serial resource."""
+
+        instrument = Serial(
+            port=port,
+            baudrate=baudrate,
+            timeout=1
+        )
+
+        try:
+
+            try:
+                instrument.reset_input_buffer()
+                instrument.reset_output_buffer()
+
+                instrument.write(b"*IDN?\n")
+
+                idn = (
+                    instrument.readline()
+                    .decode("ascii")
+                    .strip()
+                )
+
+                parts = [
+                    x.strip()
+                    for x in idn.split(",")
+                ]
+
+                info = InstrumentInfo(
+                    resource_name=port,
+                    connection_type="serial",
+                    connection_kwargs={
+                        "port": port,
+                        "baudrate": baudrate,
+                        "timeout": 1,
+                    },
+                    identification=idn,
+                )
+
+                if len(parts) >= 1:
+                    info.manufacturer = parts[0]
+
+                if len(parts) >= 2:
+                    info.model = parts[1]
+
+                if len(parts) >= 3:
+                    info.serial_number = parts[2]
+
+                if len(parts) >= 4:
+                    info.firmware = parts[3]
+
+                print(
+                    f"Equipment Manager : serial instrument "
+                    f"{info.model} detected"
+                )
+
+                (
+                    info.instrument_type,
+                    info.instrument_class,
+                    info.gui_class
+                ) = self._guess_type(
+                    info.manufacturer,
+                    info.model
+                )
+
+                return info
+
+            except Exception:
+                pass
+
+            return InstrumentInfo(
+                resource_name=port,
+                connection_type="serial",
+                connection_kwargs={
+                    "port": port,
+                    "baudrate": baudrate,
+                    "timeout": 1,
+                },
+                identification="Unknown serial device",
+            )
+
+        finally:
+
+            try:
+                instrument.close()
+            except Exception:
+                pass
+
+    def scan_visa(self) -> Dict[str, InstrumentInfo]:
         """Discover and identify all VISA instruments."""
 
         self.instruments.clear()
@@ -41,14 +149,22 @@ class EquipmentManager:
         resources = self.rm.list_resources()
 
         for resource_name in resources:
+            if resource_name.startswith("ASRL"):
+                continue
             try:
                 info = self._identify_resource(resource_name)
+
                 self.instruments[resource_name] = info
 
             except Exception as ex:
                 self.instruments[resource_name] = InstrumentInfo(
                     resource_name=resource_name,
-                    identification=f"Failed to identify: {ex}"
+                    connection_type="visa",
+                    connection_kwargs={
+                        "resource_name": resource_name,
+                        "visa_resource_manager": self.rm
+                    },
+                    identification="Unknown VISA device"
                 )
 
         return self.instruments
@@ -70,13 +186,18 @@ class EquipmentManager:
 
                 info = InstrumentInfo(
                     resource_name=resource_name,
+                    connection_type="visa",
+                    connection_kwargs={
+                        "resource_name": resource_name,
+                        "visa_resource_manager": self.rm,
+                        "address": resource_name.split("::")[1],
+                    },
                     identification=idn
                 )
 
                 # Check the address and connection type
                 resource_info =  [rm for rm in resource_name.split(":") if rm.strip()]
-                if "GPIB" in resource_info[0]:
-                    info.connection_type = "GPIB"
+
                 info.address = int(resource_info[1])
                 if len(parts) >= 4:
                     info.manufacturer = parts[0]
@@ -92,8 +213,11 @@ class EquipmentManager:
 
                 return info
 
-            except Exception:
-                pass
+            except Exception as ex:
+                print(
+                    f"{resource_name} failed ID query : {ex}"
+                )
+
 
             # Fallback to VISA attributes
             try:
@@ -124,7 +248,7 @@ class EquipmentManager:
         self,
         manufacturer: Optional[str],
         model: Optional[str]
-    ) -> tuple[str, Equipment|None]:
+    ) -> tuple[str, Equipment|None, InstrumentWidget|None]:
 
         text = f"{manufacturer or ''} {model or ''}".lower()
 
@@ -137,6 +261,9 @@ class EquipmentManager:
             ],
             "powermeter"   : [
                 "2835-C"
+            ],
+            "led_controler": [
+                "LedController", "Alter"
             ],
             # "multimeter": {
             #     "dmm", "344", "multimeter"
@@ -182,7 +309,8 @@ if __name__ == "__main__":
     manager = EquipmentManager()
 
     try:
-        manager.scan()
+        manager.scan_visa()
+        # manager.scan_serial()
 
         print(f"Found {len(manager.instruments)} instrument(s)\n")
 

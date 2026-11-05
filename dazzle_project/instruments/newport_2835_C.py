@@ -3,6 +3,7 @@ from time import sleep
 from enum import Enum, StrEnum
 
 from dazzle_project.instruments.equipment import Equipment
+from dazzle_project.communications.connection import VisaConnection
 from dazzle_project.instruments.pro8000 import PRO_8000
 import ThorlabsPM100
 
@@ -28,10 +29,15 @@ class NEWPORT_2835_C(Equipment):
         MANUAL = 0
         AUTO = 1
 
-    def __init__(self, resource_name, serial_number=None):
+    def __init__(self, resource_name, visa_resource_manager=None, serial_number=None):
         super().__init__(resource_name, serial_number)
         self.current_channel=None
         self.name = "NEWPORT_2835_C"
+
+        self.connection = VisaConnection(
+            resource_name,
+            visa_resource_manager
+        )
 
     # ------------
     #   DETECTOR

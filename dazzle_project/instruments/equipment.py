@@ -1,5 +1,5 @@
-from abc import ABC
-import pyvisa
+from abc import ABC, abstractmethod
+import pyvisa, serial
 from threading import Lock
 from time import sleep
 
@@ -39,63 +39,88 @@ class DummyEquipment():
 
 class Equipment(ABC):
 
-    def __init__(self, resource_name, serial_number=None , manufacturer="", visa_resource_manager=None):
-        self.resource_name = resource_name
-        self.manufacturer = manufacturer
-        self.serial_number = serial_number
-        self.name = "equipment"
-        # self._lock = Lock()
-        self.rm = visa_resource_manager or pyvisa.ResourceManager()
-        self.instrument = None
-        self.connected = False
-        try :
-            self.instrument = self.rm.open_resource(resource_name)
-            self.connected = True
+    def __init__(
+        self,
+        name="Equipment",
+        connection=None,
+        serial_number=None,
+        manufacturer=""
+    ):
 
-        except pyvisa.VisaIOError as e:
-            print(f"Could not open {resource_name}: {e}")
+        self.name = name
+        self.connection = connection
+
+        self.serial_number = serial_number
+        self.manufacturer = manufacturer
+
+        self.connected = True
 
         self.id = None
         self.model = None
         self.firmware = None
 
+    def write(self, command):
+        return self.connection.write(command)
+
+    def read(self):
+        return self.connection.read()
+
+    def query(self, command):
+        return self.connection.query(command)
+
+    def close(self):
+
+        self.connection.close()
+        self.connected = False
+
+    def clear(self):
+
+        self.connection.clear()
+        sleep(0.1)
+
     def query_id(self):
+
         self.id = self.query("*IDN?").strip()
 
         fields = [x.strip() for x in self.id.split(",")]
 
-        if len(fields) >= 1:
+        if len(fields) > 0:
             self.manufacturer = fields[0]
 
-        if len(fields) >= 2:
-            self.name = fields[1]
-
-        # if len(fields) >= 3:
-        #     self.serial_number = fields[2]
-        #
-        # if len(fields) >= 4:
-        #     self.firmware = fields[3]
+        if len(fields) > 1:
+            self.model = fields[1]
 
         return self.id
 
-    def write(self, command):
-        return self.instrument.write(command)
+class SerialEquipment(Equipment):
 
-    def read(self):
-        return self.instrument.read()
+    def __init__(
+        self,
+        port,
+        baudrate=9600,
+        timeout=1
+    ):
 
-    def query(self, command):
-        out = self.instrument.query(command)
-        sleep(0.1)
-        return out
+        super().__init__()
 
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
 
-    def clear(self):
-        return self.instrument.clear()
+    def connect(self):
 
-    def close(self):
-        self.instrument.close()
-        self.connected = False
+        try:
 
-    def reconnect(self):
-        self.rm.open_resource(self.resource_name)
+            self.instrument = serial.Serial(
+                self.port,
+                baudrate=self.baudrate,
+                timeout=self.timeout
+            )
+
+            self.connected = True
+
+        except serial.SerialException as ex:
+
+            print(
+                f"Could not open {self.port}: {ex}"
+            )

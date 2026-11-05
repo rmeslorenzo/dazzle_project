@@ -2,6 +2,7 @@ from pyqtgraph.Qt.QtCore import Slot
 from win32net import NetGetAnyDCName
 
 from dazzle_project.instruments.equipment import Equipment
+from dazzle_project.communications.connection import VisaConnection
 from pyvisa.errors import VisaIOError
 import threading
 from enum import IntEnum, StrEnum
@@ -169,9 +170,16 @@ class PRO_8000(Equipment):
         SLOT7 = 7
         SLOT8 = 8
 
-    def __init__(self, resource_name, serial_number = None, current_slot = Slot.SLOT0, current_sensor : Sensor = None):
-        super().__init__(resource_name, serial_number)
+    def __init__(self, resource_name, visa_resource_manager=None, serial_number = None, manufacturer="", current_slot = Slot.SLOT0, current_sensor : Sensor = None):
 
+        connection = VisaConnection(
+            resource_name,
+            visa_resource_manager
+        )
+
+        super().__init__(connection, serial_number, manufacturer)
+
+        self.connection = connection
         self.select_slot(self.Slot.SLOT1)
         self.current_slot = current_slot
         self.current_calibration = None
@@ -555,11 +563,21 @@ class PRO_8000(Equipment):
 
 if __name__ == "__main__" :
     import pyvisa
+    from dazzle_project.instruments.equipment_manager import InstrumentInfo
 
     rm = pyvisa.ResourceManager()
     print(rm.list_resources())
 
-    pro8000 = PRO_8000("GPIB0::10::INSTR")
+    inst_info = InstrumentInfo(
+    resource_name="GPIB0::10::INSTR",
+    connection_type="visa",
+    connection_kwargs={
+        "visa_resource_manager": rm
+        }
+    )
+
+    pro8000 = PRO_8000("GPIB0::10::INSTR", visa_resource_manager=rm)
+    print(pro8000)
 
     print(pro8000.query_id())
 

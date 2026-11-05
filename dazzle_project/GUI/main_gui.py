@@ -3,6 +3,7 @@ import pyvisa
 
 from dazzle_project.instruments import get_instrument_class, INSTRUMENT_CLASSES
 from dazzle_project.gui import get_instrument_gui_class, INSTRUMENT_GUI_CLASSES
+from dazzle_project.communications import get_connection_type, CONNECTION_CLASSES
 
 from dazzle_project.instruments.equipment_manager import EquipmentManager
 from dazzle_project.instruments.pro8000 import PRO_8000, DummyPro8000
@@ -16,6 +17,7 @@ class MainGUI(QtWidgets.QMainWindow):
         super().__init__()
 
         self.dummy_mode = dummy_mode
+        self.visa_resource_manager = None
         self.setWindowTitle("Dazzle Instrument Control")
         self.resize(1200, 800)
 
@@ -115,25 +117,90 @@ class MainGUI(QtWidgets.QMainWindow):
         layout.addWidget(connection_label)
         connection_layout = QtWidgets.QHBoxLayout()
 
+        # interface layout with all the option for the com interface
+        interface_box = QtWidgets.QGroupBox("interface parameters")
+        interface_layout = QtWidgets.QVBoxLayout()
+
         # Connection type
-        connection_layout.addWidget(
+        row_layout = QtWidgets.QHBoxLayout()
+
+        row_layout.addWidget(
             QtWidgets.QLabel("Connection:")
         )
 
         self.connection_type = QtWidgets.QComboBox()
 
         self.connection_type.addItems([
+            "visa",
+            "serial",
+        ])
+
+        row_layout.addWidget(
+            self.connection_type
+        )
+
+        interface_layout.addLayout(row_layout)
+
+        # GPIB ID if GPIB is used
+        row_layout = QtWidgets.QHBoxLayout()
+        row_layout.addWidget(
+            QtWidgets.QLabel("Interface (visa only): ")
+        )
+        self.interface_type = QtWidgets.QComboBox()
+
+        self.interface_type.addItems([
             "GPIB",
             "USB",
         ])
 
-        connection_layout.addWidget(
-            self.connection_type
+        row_layout.addWidget(
+            self.interface_type
         )
+        interface_layout.addLayout(row_layout)
+
+        # Bus number in case there is a GPIB interface
+        row_layout = QtWidgets.QHBoxLayout()
+
+        row_layout.addWidget(
+            QtWidgets.QLabel("Bus# (GPIB only): ")
+        )
+
+        self.bus_number = QtWidgets.QSpinBox()
+
+        self.bus_number.setMinimum(0)
+        self.bus_number.setMaximum(10)
+        self.bus_number.setValue(0)
+
+        row_layout.addWidget(
+            self.bus_number
+        )
+
+        interface_layout.addLayout(row_layout)
+
+        # Baudrate for serial communications
+        row_layout = QtWidgets.QHBoxLayout()
+        row_layout.addWidget(
+            QtWidgets.QLabel("Baud rate (Serial only): ")
+        )
+
+        self.baudrate = QtWidgets.QSpinBox()
+
+        self.baudrate.setMinimum(300)
+        self.baudrate.setMaximum(256000)
+        self.baudrate.setValue(9600)
+
+        row_layout.addWidget(
+            self.baudrate
+        )
+
+        interface_layout.addLayout(row_layout)
+        interface_box.setLayout(interface_layout)
+
+        connection_layout.addWidget(interface_box)
 
         # Address
         connection_layout.addWidget(
-            QtWidgets.QLabel("Address:")
+            QtWidgets.QLabel("Address/Port:")
         )
 
         self.address = QtWidgets.QSpinBox()
@@ -193,25 +260,61 @@ class MainGUI(QtWidgets.QMainWindow):
     def auto_scan(self):
         """Automatic recognition and connection of instruments.
         """
-        self.manager.scan()
+        self.manager.scan_visa()
         for inst_info in self.manager.list_instruments():
             if inst_info.instrument_type is not None:
-                self.connect_instrument(inst_info.connection_type, inst_info.address, inst_info.model, inst_info.instrument_class, inst_info.gui_class)
+                self.connect_instrument(
+                    inst_info.connection_type,
+                    inst_info.connection_kwargs,
+                    inst_info.model,
+                    inst_info.instrument_class,
+                    inst_info.gui_class,
+                )
 
     def connect_instrument_button(self):
 
         connection_type = self.connection_type.currentText()
+        interface_type = self.interface_type.currentText()
+        bus_number = self.bus_number.value()
+        baudrate = self.baudrate.value()
         address = self.address.value()
         instrument_model = self.instrument_model.currentText()
+
+        # create dict with parameters
+        if connection_type == "serial":
+            kwargs_dict = {"port"     : f"COM{address}",
+                           "baudrate" : baudrate,
+                           }
+        elif connection_type == "visa":
+            if self.visa_resource_manager is None:
+                self.visa_resource_manager = pyvisa.ResourceManager()
+            if interface_type != "GPIB":
+                bus_number = ""
+            resource_name =  f"{interface_type}{bus_number}::{address}::INSTR"
+            kwargs_dict = {"resource_name" : resource_name,
+                           "visa_resource_manager" : self.visa_resource_manager,
+                           "address" : address,
+                           }
 
         instrument_class     = get_instrument_class(instrument_model)
         instrument_gui_class = get_instrument_gui_class(instrument_model)
 
-        self.connect_instrument(connection_type, address, instrument_model, instrument_class, instrument_gui_class)
+        self.connect_instrument(connection_type, kwargs_dict, instrument_model, instrument_class, instrument_gui_class)
 
 
-    def connect_instrument(self, connection_type, address, instrument_model, instrument_class, instrument_gui_class):
+    def connect_instrument(self, connection_type, connection_kwargs, instrument_model, instrument_class, instrument_gui_class):
 
+        # Extract param from kwargs
+        if connection_type == "visa":
+            resource_name = connection_kwargs["resource_name"]
+            address = connection_kwargs["address"]
+
+        elif connection_type == "serial":
+            resource_name = "who_cares_its_serial"
+            address = connection_kwargs["port"]
+
+        else :
+            raise ValueError("Invalid connection type")
 
         try:
 
@@ -221,8 +324,9 @@ class MainGUI(QtWidgets.QMainWindow):
             print(f"connecting to instrument {instrument_model}")
 
             instrument = self.create_instrument(
+                resource_name,
                 connection_type,
-                address,
+                connection_kwargs,
                 instrument_model,
                 instrument_class
             )
@@ -317,40 +421,27 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def create_instrument(
             self,
+            resource_name,
             connection_type,
-            address,
+            connection_kwargs,
             instrument_model,
             instrument_class,
     ):
-        try:
-            if self.dummy_mode:
-                    return DummyPro8000()
-            elif "GPIB" in connection_type:
-                connection_prefix = connection_type + "0"
-                connection_name = f"{connection_prefix}::{address}::INSTR"
-                return instrument_class(connection_name)
-            # USB connection to be done later.
+        connection_class = get_connection_type(str(connection_type))
 
-        except:
-            raise ValueError(f"Unknown Instrument: {instrument_model}")
+        print("connection_type :", connection_type)
+        print("connection_class:", connection_class)
 
-
-
-            # Real implementation later:
-            #
-            # if connection_type == "GPIB":
-            #     resource = f"GPIB0::{address}::INSTR"
-            #     return PRO_8000(resource)
-
-        # elif instrument_type == "PowerMeter":
-        #
-        #     raise NotImplementedError(
-        #         "PowerMeter not implemented yet."
-        #     )
-        #
-        # raise ValueError(
-        #     f"Unknown instrument: {instrument_type}"
-        # )
+        if connection_type == "visa":
+            return instrument_class(
+                resource_name=connection_kwargs["resource_name"],
+                visa_resource_manager=connection_kwargs["visa_resource_manager"],
+            )
+        elif connection_type == "serial":
+            return instrument_class(
+                port=connection_kwargs["port"],
+                baudrate=connection_kwargs["baudrate"],
+            )
 
         # =====================================================
         # Create gui
@@ -406,7 +497,7 @@ class MainGUI(QtWidgets.QMainWindow):
         values = [
             instrument_info["model"],
             instrument_info["connection"],
-            instrument_info["address"],
+            str(instrument_info["address"]),
             "Connected",
         ]
 

@@ -2,6 +2,8 @@ from enum import Enum
 import serial
 import time
 
+from dazzle_project.instruments.equipment import Equipment
+from dazzle_project.communications.connection import SerialConnection
 
 class Led(Enum):
     GREEN = "g"
@@ -10,7 +12,7 @@ class Led(Enum):
     WHITE = "w"
 
 
-class LED_CONTROLLER:
+class LedController(Equipment):
     """Controls the LED lamp through a serial connection."""
     def __init__(self, port="COM3", baudrate=9600, timeout=1):
         """
@@ -22,10 +24,15 @@ class LED_CONTROLLER:
                    baudrate: Serial communication speed.
                    timeout: Read timeout in seconds.
                """
-        self._ser = serial.Serial(
+        connection = SerialConnection(
             port=port,
-            baudrate=baudrate,
-            timeout=timeout
+            baudrate=9600
+        )
+
+        super().__init__(
+            name="LedController",
+            connection=connection,
+            manufacturer="Alter"
         )
 
         # Arduino may reset when the serial port is opened
@@ -33,8 +40,15 @@ class LED_CONTROLLER:
 
         self._current_led = None
 
-    def _send(self, command: str):
-        self._ser.write(command.encode("ascii"))
+    # def _send(self, command: str):
+    #     self._ser.write(command.encode("ascii"))
+    def write(self, command, encoding="ascii"):
+        if "IDN" in command:
+            message = f"{self.name}, {self.manufacturer}" + "\n"
+            print(message)
+        else :
+            self.connection.write(command, encoding)
+
 
     def enable(self, led: Led):
         """
@@ -45,7 +59,7 @@ class LED_CONTROLLER:
             return
 
         self.output_off()
-        self._send(led.value)
+        self.write(led.value)
         self._current_led = led
 
     def enable_green(self):
@@ -84,12 +98,12 @@ class LED_CONTROLLER:
         """
         Disable all LEDs.
         """
-        self._send("o")
+        self.write("o")
         self._current_led = None
 
     def close(self):
         self.output_off()
-        self._ser.close()
+        super().close()
 
     def __enter__(self):
         return self

@@ -1817,7 +1817,7 @@ if __name__ == "__main__":
         rm = pyvisa.ResourceManager()
         print(rm.list_resources())
 
-        pro8000 = PRO_8000("GPIB0::10::INSTR")
+        pro8000 = PRO_8000("GPIB0::10::INSTR", visa_resource_manager=rm)
 
         pro8000.query_id()
 
