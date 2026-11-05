@@ -1,14 +1,12 @@
-from dazzle_project.instruments.led_controller import LED_CONTROLLER
+from dazzle_project.instruments.led_controller import LedController
 
 
-ld_ctrl = LED_CONTROLLER(port='COM3')
+ld_ctrl = LedController(port='COM3')
 
-ld_ctrl.enable_red()
+ld_ctrl.enable_green()
+
+ld_ctrl.write("*IDN?")
 
 ld_ctrl.close()
 
 print("test")
-
-
-
-

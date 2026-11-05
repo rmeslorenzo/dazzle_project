@@ -3,12 +3,14 @@ Import Instruments. This dictionary is a database but instruments in use in the 
 to automatically recognize the instruments from their names or serial numbers if it is recognized it will instantiate the
 according equipment class the instrument belongs.
 """
+from .led_controller import LedController
 from .pro8000 import PRO_8000
 from .newport_2835_C import NEWPORT_2835_C
 
 INSTRUMENT_CLASSES = {
     "PRO8000": PRO_8000,
     "2835-C": NEWPORT_2835_C,
+    "LEDCONTROLLER": LedController,
 }
 
 def get_instrument_class(model_name):
