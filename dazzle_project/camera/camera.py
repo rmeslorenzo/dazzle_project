@@ -24,3 +24,7 @@ class Camera():
     @abstractmethod
     def get_image_numpy(self):
         pass
+
+class Ximea_Camera(Camera):
+    """class for camera class."""
+    pass

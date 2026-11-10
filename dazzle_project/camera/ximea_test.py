@@ -80,7 +80,7 @@ cam.get_param("gpo_mode")
 print('Starting data acquisition...')
 cam.start_acquisition()
 
-for i in range(10):
+for i in range(5):
     #get data and pass them from camera to img
     cam.get_image(img)
 
@@ -88,10 +88,6 @@ for i in range(10):
     #for Python2.x function returns string
     #for Python3.x function returns bytes
     np_data = img.get_image_data_numpy()
-
-    if i == 5:
-        plt.imshow(np_data)
-        plt.show()
 
     temperature = cam.get_temp()
 
@@ -102,15 +98,19 @@ for i in range(10):
     print('Image height (pixels): ' + str(img.height))
     # print('First 10 pixels: ' + str(data[:10]))
     print('\n')
+    name_file = (f"green_picture_w_{i}.npy")
+    np.save(
+        r"I:\OP\OFERTAS\2024\A3-24-0010 TENSIS H2024 Olivier Saint Pe\6.Resultados\05. Dazzling\Countermeasures\resultados" + "\\" + name_file,
+        np_data)
 
 
 #stop data acquisition
 print('Stopping acquisition...')
 cam.stop_acquisition()
 
-name_file = "background_pixel_destruction_after_setup_pinhole_at_camera.npy"
 
-np.save(r"C:\Users\rmmestre\dazzle_project\ximea_capture" + "\\"+ name_file, np_data)
+
+
 # np_data.astype(np.uint16).tofile("bakcground_ximea.bin")
 
 print("test")
