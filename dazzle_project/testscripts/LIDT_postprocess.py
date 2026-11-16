@@ -18,32 +18,39 @@ def compare_arrays(array1, array2=None, array3=None, array4=None,
                    title2="Array 2",
                    title3="Array 3",
                    title4="Array 4",
-                   cmap="gray"):
+                   cmap="gray",
+                   roi = None):
     """
     Display three 2D arrays side by side.
     """
+    if roi == None:
+        roi = {}
+        roi["ymin"] = 0
+        roi["ymax"] = array1.shape[0]
+        roi["xmin"] = 0
+        roi["xmax"] = array1.shape[1]
 
     fig, axes = plt.subplots(1, 4, figsize=(18, 5))
 
-    im1 = axes[0].imshow(array1, cmap=cmap)
+    im1 = axes[0].imshow(array1[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]], cmap=cmap)
     axes[0].set_title(title1)
     axes[0].axis("off")
     plt.colorbar(im1, ax=axes[0])
 
     if array2 is not None:
-        im2 = axes[1].imshow(array2, cmap=cmap)
+        im2 = axes[1].imshow(array2[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]], cmap=cmap)
         axes[1].set_title(title2)
         axes[1].axis("off")
         plt.colorbar(im2, ax=axes[1])
 
     if array3 is not None:
-        im3 = axes[2].imshow(array3, cmap=cmap)
+        im3 = axes[2].imshow(array3[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]], cmap=cmap)
         axes[2].set_title(title3)
         axes[2].axis("off")
         plt.colorbar(im3, ax=axes[2])
 
     if array4 is not None:
-        im4 = axes[3].imshow(array4, cmap=cmap)
+        im4 = axes[3].imshow(array4[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]], cmap=cmap)
         axes[3].set_title(title4)
         axes[3].axis("off")
         plt.colorbar(im4, ax=axes[3])
@@ -110,7 +117,7 @@ import numpy as np
 
 def compute_damage_mask(after_laser_corrected,
                         reference_corrected,
-                        threshold=0.1):
+                        threshold=0.1, roi=None):
     """
     Compute damaged pixels from flat-field correction.
 
@@ -131,6 +138,12 @@ def compute_damage_mask(after_laser_corrected,
     np.ndarray
         Boolean array. True indicates a damaged pixel.
     """
+    if roi == None:
+        roi = {}
+        roi["ymin"] = 0
+        roi["ymax"] = after_laser_corrected.shape[0]
+        roi["xmin"] = 0
+        roi["xmax"] = after_laser_corrected.shape[1]
 
     # Avoid division by zero
     valid_pixels = reference_corrected > 0
@@ -149,7 +162,11 @@ def compute_damage_mask(after_laser_corrected,
 
     damage_mask = np.abs(ratio - 1.0)  > threshold
 
-    return damage_mask, ratio #ratio
+    damage_pixels = np.count_nonzero(damage_mask[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]] > threshold)
+
+    print("damaged pixels :", damage_pixels)
+
+    return damage_mask, ratio
 
 
 
@@ -157,6 +174,9 @@ if __name__ == "__main__":
 
     correct_frames_to_do = False
     damage_mask_to_do = True
+
+    roi = dict(ymin=298, ymax=298+126, xmin=480, xmax=480+152)
+
 
     lidt_path = r"C:\Users\lab_a3\dazzle_folder\LIDT\LIDT_POF"
     collimator = "PAF2-A4A"
@@ -197,9 +217,9 @@ if __name__ == "__main__":
         after_laser_array = np.load(after_laser_corrected)
         reference_array = np.load(reference_corrected)
 
-        damage_mask, ratio = compute_damage_mask(after_laser_corrected=after_laser_array, reference_corrected=reference_array, threshold=0.02)
+        damage_mask, ratio = compute_damage_mask(after_laser_corrected=after_laser_array, reference_corrected=reference_array, threshold=0.02, roi=roi)
 
-        compare_arrays(after_laser_array, reference_array, ratio, damage_mask, title1="after_laser", title2="reference", title3="ratio", title4="damage_mask")
+        compare_arrays(after_laser_array, reference_array, ratio, damage_mask, title1="after_laser", title2="reference", title3="ratio", title4="damage_mask", roi=roi)
 
         np.save(os.path.join(illum_path, "ratio_mask_image.npy"), ratio)
         np.save(os.path.join(illum_path, "damage_mask.npy"), damage_mask)
