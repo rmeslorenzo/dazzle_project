@@ -1256,6 +1256,9 @@ class PRO8000_GUI(InstrumentWidget):
             elif "slot6_enable" in def_key:
                 sleep(0.2)
                 self.toogle_ld(def_val)
+            elif "ch6_current_limit" in def_key:
+                self.worker.apply_diode_current_ch6_limit(def_val)
+                self.doubleSpinBox_laser_current_limit.setValue(def_val)
             elif "pid" in def_key:
                 self.instrument.set_i_share_on()
                 sleep(0.2)
