@@ -22,10 +22,11 @@ kwargs = {
     "collimator": "PAF2-A4A",
     "detector": "818-UV",
     "laser": "25118553-BNT100",
-    "base_folder": r"C:\Users\lab_a3\dazzle_folder\dazzling",
-    "ld_current": 0.51,
+    "base_folder": r"C:\Users\lab_a3\dazzle_folder\countermeasure", #r"C:\Users\lab_a3\dazzle_folder\dazzling",
+    "ld_current": 0.2, # 0.45
     "n_average": 10,
-    "exposure_time": [15, 100, 1000, 3000]
+    "exposure_time": [1300],
+    "filter": "red",
 }
 base_folder = kwargs["base_folder"]
 collimator  = kwargs["collimator"]
@@ -49,10 +50,15 @@ pro8000.select_slot(channel_ld_driver)
 #
 # Apply current
 #
+ld_current    = kwargs["ld_current"]
+filter        = kwargs["filter"]
 print(f"[pro8000]: apply current {kwargs["ld_current"]} A")
 pro8000.set_diode_current(kwargs["ld_current"])
 sleep(1)
-pro8000.set_ld_on_ch6()
+if ld_current == "dark":
+    pro8000.set_ld_off_ch6()
+else :
+    pro8000.set_ld_on_ch6()
 
 #start communication
 #to open specific device, use:
@@ -62,7 +68,7 @@ print('Opening first camera...')
 camera.open_device()
 
 exposure_time = kwargs["exposure_time"]
-ld_current    = kwargs["ld_current"]
+
 # number of sampling for each measurement
 WAIT_SETTLING = 60
 WAIT_MEAS = 10
@@ -98,7 +104,7 @@ for exp_t in exposure_time:
     frames = np.stack(frames)
     avg_frame = np.mean(frames, axis=0)
 
-    np.save(os.path.join(current_folder, f"dazzling_{exp_t}_us.npy"), avg_frame)
+    np.save(os.path.join(current_folder, f"dazzling_{filter}_{exp_t}_us.npy"), avg_frame)
 
     sleep(0.5)
 
