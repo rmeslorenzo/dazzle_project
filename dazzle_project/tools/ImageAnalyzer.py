@@ -10,8 +10,9 @@
 # -----------------------------------------------------------------------
 
 
-
+import cv2
 import numpy as np
+
 from PIL import Image
 
 from PyQt6 import QtWidgets
@@ -31,6 +32,16 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        # ====================
+        #  Profile parameter
+        # ====================
+        self.xc                   = None
+        self.yc                   = None
+        self.beam_center_marker   = None
+        self.beam_contour         = None
+        self.beam_radius_pixels   = None
+        self.beam_diameter_pixels = None
+
         self.image = None
 
         # =====================================================
@@ -41,6 +52,13 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.load_button = QtWidgets.QPushButton("Load Image")
         self.load_button.clicked.connect(self.load_image)
+
+        self.measure_beam_button = QtWidgets.QPushButton("Measure Beam")
+        self.measure_beam_button.clicked.connect(self.measure_beam)
+
+        self.use_roi_checkbox = QtWidgets.QCheckBox("Use ROI")
+        self.use_roi_checkbox.setChecked(False)
+        self.use_roi_checkbox.toggled.connect(self.toggle_roi)
 
         # ==========================
         # PROFILE TYPE SELECTION
@@ -67,6 +85,12 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.max_label = QtWidgets.QLabel("Max: -")
         self.cursor_label = QtWidgets.QLabel("X: -, Y: -, Pixel: -")
 
+        # Profile
+        self.xc_label = QtWidgets.QLabel("Xc: -")
+        self.yc_label = QtWidgets.QLabel("Yc: -")
+        self.radius_label = QtWidgets.QLabel("Radius: -")
+        self.diameter_label = QtWidgets.QLabel("Diameter: -")
+
 
         stats_layout = QtWidgets.QHBoxLayout()
         stats_layout.addWidget(self.size_label)
@@ -77,6 +101,11 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         stats_layout.addWidget(self.cursor_label)
         stats_layout.addWidget(QtWidgets.QLabel("Profile:"))
         stats_layout.addWidget(self.profile_mode)
+        # Profile
+        stats_layout.addWidget(self.xc_label)
+        stats_layout.addWidget(self.yc_label)
+        stats_layout.addWidget(self.radius_label)
+        stats_layout.addWidget(self.diameter_label)
 
         stats_layout.addStretch()
 
@@ -143,6 +172,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         image_layout = QtWidgets.QHBoxLayout()
         image_layout.addWidget(self.load_button)
         image_layout.addWidget(self.fit_button)
+        image_layout.addWidget(self.measure_beam_button)
+        image_layout.addWidget(self.use_roi_checkbox)
 
         # ----------------------------------------------
         #   Image load option for *.bin and *.npy files
@@ -211,8 +242,18 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             pen='y'
         )
 
+        self.beam_roi = pg.RectROI(
+            [200, 200],
+            [300, 300],
+            pen=pg.mkPen('y', width=2)
+        )
+
         self.image_plot.addItem(self.v_line)
         self.image_plot.addItem(self.h_line)
+        self.image_plot.addItem(self.beam_roi)
+
+        # Hidden by default
+        self.beam_roi.hide()
 
     # =========================================================
     # Image Loading
@@ -326,6 +367,13 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
     # Public Method
     # =========================================================
 
+    def toggle_roi(self, checked):
+
+        if checked:
+            self.beam_roi.show()
+        else:
+            self.beam_roi.hide()
+
     def set_image(self, image: np.ndarray):
 
         self.image = image.astype(np.float64)
@@ -364,9 +412,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             dtype=dtype
         )
 
-        print("dtype =", dtype)
-        print("file elements =", data.size)
-        print("expected =", width * height)
+        # print("dtype =", dtype)
+        # print("file elements =", data.size)
+        # print("expected =", width * height)
 
         expected_size = width * height
         ratio = data.size / expected_size
@@ -506,9 +554,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             column_profile
         )
 
-        # ==================
-        #  MANAGE PROFILES
-        # ==================
+    # ==================
+    #  MANAGE PROFILES
+    # ==================
 
     def calculate_profiles(self):
 
@@ -535,6 +583,206 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             column_profile = np.max(self.image, axis=0)
 
         return row_profile, column_profile
+
+    def beam_centroid(self, image):
+
+        image = image.astype(float)
+
+        y, x = np.indices(image.shape)
+
+        total = image.sum()
+
+        if total <= 0:
+            return None, None
+
+        xc = (x * image).sum() / total
+        yc = (y * image).sum() / total
+
+        print("shape =", image.shape)
+
+        y_peak, x_peak = np.unravel_index(
+            np.argmax(image),
+            image.shape
+        )
+
+        print("peak =", x_peak, y_peak)
+        print("centroid =", xc, yc)
+
+        return xc, yc
+
+    def define_profile(self, image):
+
+        # ====================================
+        #  Step 1: Initiate and reset values
+        # ====================================
+        if self.beam_contour is not None:
+            self.image_plot.removeItem(self.beam_contour)
+            self.beam_contour = None
+
+        if self.beam_center_marker is not None:
+            self.image_plot.removeItem(
+                self.beam_center_marker
+            )
+
+        # ==================================
+        #  Determine 1/e² threshold
+        # ==================================
+
+        # Remove background and calculate centroid
+        background = np.median(image)
+
+        image_bs = image - background
+        image_bs[image_bs < 0] = 0
+
+        print(
+            image.min(),
+            image.max(),
+            image.sum()
+        )
+
+        print(
+            image_bs.min(),
+            image_bs.max(),
+            image_bs.sum()
+        )
+
+        peak = image_bs.max()
+
+        #threshold = peak * np.exp(-2)
+        threshold = 0.1353 * peak
+
+        # =============================
+        #  Step 3: Create Binary Mask
+        # =============================
+
+        beam_mask = image_bs >= threshold
+
+        masked_beam = image_bs * beam_mask
+
+        self.xc, self.yc = self.beam_centroid(masked_beam)
+
+        self.beam_center_marker = pg.ScatterPlotItem(
+            pos=np.array([[self.xc, self.yc]]),
+            symbol='+',
+            size=20,
+            pen=pg.mkPen('g', width=3)
+        )
+
+        self.image_plot.addItem(
+            self.beam_center_marker
+        )
+
+        # ===========================================
+        #  Step 4: Calculate equivalent beam radius
+        # ===========================================
+
+        beam_area_pixels = np.sum(beam_mask)
+
+        self.beam_radius_pixels = np.sqrt(
+            beam_area_pixels / np.pi
+        )
+
+        self.beam_diameter_pixels = 2 * self.beam_radius_pixels
+
+        # print(f"xc={self.xc}, yc={self.yc}")
+
+        contours, _ = cv2.findContours(
+            beam_mask.astype(np.uint8),
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Handles missing countour safely
+        if len(contours) == 0:
+            return False
+
+        if peak == 0:
+            return False
+
+        contour = max(
+            contours,
+            key=cv2.contourArea
+        )
+
+        pts = contour.squeeze()
+
+        x = pts[:, 0]
+        y = pts[:, 1]
+
+        if self.use_roi_checkbox.isChecked():
+            roi_pos = self.beam_roi.pos()
+
+            x = x + roi_pos.x()
+            y = y + roi_pos.y()
+
+        x = np.append(x, x[0])
+        y = np.append(y, y[0])
+
+        self.beam_contour = pg.PlotDataItem(
+            x,
+            y,
+            pen=pg.mkPen('r', width=2)
+        )
+
+        self.image_plot.addItem(
+            self.beam_contour
+        )
+
+        return True
+
+
+    # Calculates beam on the image using define_profile function
+    def measure_beam(self):
+
+        if self.image is None:
+            return
+
+
+        if self.use_roi_checkbox.isChecked():
+
+            # selected ROI
+            roi_data = self.beam_roi.getArrayRegion(
+                self.image,
+                self.image_item
+            )
+
+            if roi_data is None:
+                print("Invalid ROI")
+                return
+
+            print(type(roi_data))
+            print(roi_data.shape if roi_data is not None else None)
+
+            success = self.define_profile(roi_data)
+
+            if not success:
+                return
+
+            # Correction The ROI coordinates relative to the global center
+            roi_pos = self.beam_roi.pos()
+
+            self.xc += roi_pos.x()
+            self.yc += roi_pos.y()
+
+        else:
+
+            self.define_profile(self.image)
+
+        self.xc_label.setText(
+            f"Xc: {self.xc:.1f}"
+        )
+
+        self.yc_label.setText(
+            f"Yc: {self.yc:.1f}"
+        )
+
+        self.radius_label.setText(
+            f"Radius: {self.beam_radius_pixels:.1f} px"
+        )
+
+        self.diameter_label.setText(
+            f"Diameter: {self.beam_diameter_pixels:.1f} px"
+        )
 
 
 if __name__ == "__main__":
