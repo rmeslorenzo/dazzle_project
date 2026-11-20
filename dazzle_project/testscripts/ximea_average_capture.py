@@ -22,15 +22,17 @@ kwargs = {
     "collimator": "PAF2-A4A",
     "detector": "818-UV",
     "laser": "25118553-BNT100",
-    "base_folder": r"C:\Users\lab_a3\dazzle_folder\countermeasure", #r"C:\Users\lab_a3\dazzle_folder\dazzling",
-    "ld_current": 0.2, # 0.45
+    "base_folder": r"C:\Users\lab_a3\dazzle_folder", #r"C:\Users\lab_a3\dazzle_folder\dazzling",
+    "item_folder": "LIV",
+    "ld_current": 0.585, # 0.45
     "n_average": 10,
-    "exposure_time": [1300],
-    "filter": "red",
+    "exposure_time": [140],
+    "filter": None,
 }
 base_folder = kwargs["base_folder"]
 collimator  = kwargs["collimator"]
-folder_test = os.path.join(base_folder, collimator)
+item_folder = kwargs["item_folder"]
+folder_test = os.path.join(base_folder, item_folder, collimator)
 folder_test_path = Path(folder_test)
 
 if not folder_test_path.exists():
@@ -51,7 +53,8 @@ pro8000.select_slot(channel_ld_driver)
 # Apply current
 #
 ld_current    = kwargs["ld_current"]
-filter        = kwargs["filter"]
+if kwargs["filter"] is not None:
+    filter        = kwargs["filter"]
 print(f"[pro8000]: apply current {kwargs["ld_current"]} A")
 pro8000.set_diode_current(kwargs["ld_current"])
 sleep(1)
@@ -104,7 +107,12 @@ for exp_t in exposure_time:
     frames = np.stack(frames)
     avg_frame = np.mean(frames, axis=0)
 
-    np.save(os.path.join(current_folder, f"dazzling_{filter}_{exp_t}_us.npy"), avg_frame)
+    if kwargs["filter"] is not None:
+        file_name = f"dazzling_{filter}_{exp_t}_us.npy"
+    else :
+        file_name = f"dazzling_{exp_t}_us.npy"
+
+    np.save(os.path.join(current_folder, file_name), avg_frame)
 
     sleep(0.5)
 
