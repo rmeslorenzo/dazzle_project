@@ -598,6 +598,12 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         xc = (x * image).sum() / total
         yc = (y * image).sum() / total
 
+        if self.use_roi_checkbox.isChecked():
+            roi_pos = self.beam_roi.pos()
+
+            xc = xc + roi_pos.x()
+            yc = yc + roi_pos.y()
+
         print("shape =", image.shape)
 
         y_peak, x_peak = np.unravel_index(
