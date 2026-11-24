@@ -590,6 +590,33 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
     #  MANAGE PROFILES
     # ==================
 
+    def iso11146_beam_width(image):
+
+        y, x = np.indices(image.shape)
+
+        total = image.sum()
+
+        xc = (x * image).sum() / total
+        yc = (y * image).sum() / total
+
+        sigma_x = np.sqrt(
+            ((x - xc) ** 2 * image).sum() / total
+        )
+
+        sigma_y = np.sqrt(
+            ((y - yc) ** 2 * image).sum() / total
+        )
+
+        diameter_x = 4 * sigma_x
+        diameter_y = 4 * sigma_y
+
+        return (
+            xc,
+            yc,
+            diameter_x,
+            diameter_y
+        )
+
     def calculate_profiles(self):
 
         mode = self.profile_mode.currentText()
@@ -689,6 +716,12 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         image_bs = image - background
         image_bs[image_bs < 0] = 0
 
+        # image_blur = cv2.GaussianBlur(
+        #     image_bs,
+        #     (5, 5),
+        #     0
+        # )
+
 
         print(
             "bs_min : ", image_bs.min(),
@@ -699,7 +732,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         peak = image_bs.max()
 
         #threshold = peak * np.exp(-2)
-        threshold = 0.1353 * peak
+        threshold = 0.1353 * (peak - background)
 
         # =============================
         #  Step 3: Create Binary Mask
