@@ -44,6 +44,10 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
         self.image = None
 
+        # cursor positions stored
+        self.cursor_x = 0
+        self.cursor_y = 0
+
         # =====================================================
         # Controls
         # =====================================================
@@ -60,6 +64,10 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.use_roi_checkbox.setChecked(False)
         self.use_roi_checkbox.toggled.connect(self.toggle_roi)
 
+        self.show_cursor_checkbox = QtWidgets.QCheckBox("Show Cursor")
+        self.show_cursor_checkbox.setChecked(True)
+        self.show_cursor_checkbox.toggled.connect(self.toggle_cursor)
+
         # ==========================
         # PROFILE TYPE SELECTION
         # =========================
@@ -68,7 +76,8 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             "Average",
             "Standard Deviation",
             "Minimum",
-            "Maximum"
+            "Maximum",
+            "Cursor Row/Column"
         ])
         self.profile_mode.currentIndexChanged.connect(
             self.update_display
@@ -174,6 +183,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         image_layout.addWidget(self.fit_button)
         image_layout.addWidget(self.measure_beam_button)
         image_layout.addWidget(self.use_roi_checkbox)
+        image_layout.addWidget(self.show_cursor_checkbox)
 
         # ----------------------------------------------
         #   Image load option for *.bin and *.npy files
@@ -340,6 +350,10 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         x = int(mouse_point.x())
         y = int(mouse_point.y())
 
+        # store position when mouse is moved
+        self.cursor_x = x
+        self.cursor_y = y
+
         rows, cols = self.image.shape
 
         if (
@@ -363,6 +377,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.v_line.setPos(x)
         self.h_line.setPos(y)
 
+        if self.profile_mode.currentText() == "Cursor Row/Column":
+            self.update_display()
+
     # =========================================================
     # Public Method
     # =========================================================
@@ -373,6 +390,12 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             self.beam_roi.show()
         else:
             self.beam_roi.hide()
+
+    def toggle_cursor(self, checked):
+
+        self.v_line.setVisible(checked)
+        self.h_line.setVisible(checked)
+        self.cursor_label.setVisible(checked)
 
     def set_image(self, image: np.ndarray):
 
@@ -459,7 +482,7 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         self.image_plot.hideAxis('left')
         self.image_plot.hideAxis('bottom')
 
-        viewbox.autoRange()
+        # viewbox.autoRange()
 
         #
         # create image border
@@ -534,6 +557,15 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         # ==========
         row_profile, column_profile = self.calculate_profiles()
 
+        if mode == "Cursor Row/Column":
+            self.row_plot.setTitle(
+                f"Column {self.cursor_x}"
+            )
+
+            self.column_plot.setTitle(
+                f"Row {self.cursor_y}"
+            )
+
         #
         # Right plot
         # ROW profile
@@ -581,6 +613,23 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
 
             row_profile = np.max(self.image, axis=1)
             column_profile = np.max(self.image, axis=0)
+
+        elif mode == "Cursor Row/Column":
+
+            row = np.clip(
+                self.cursor_y,
+                0,
+                self.image.shape[0] - 1
+            )
+
+            col = np.clip(
+                self.cursor_x,
+                0,
+                self.image.shape[1] - 1
+            )
+
+            row_profile = self.image[:, col]
+            column_profile = self.image[row, :]
 
         return row_profile, column_profile
 
@@ -640,16 +689,11 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
         image_bs = image - background
         image_bs[image_bs < 0] = 0
 
-        print(
-            image.min(),
-            image.max(),
-            image.sum()
-        )
 
         print(
-            image_bs.min(),
-            image_bs.max(),
-            image_bs.sum()
+            "bs_min : ", image_bs.min(),
+            "bs_max : ", image_bs.max(),
+            "bs_sum : ", image_bs.sum()
         )
 
         peak = image_bs.max()
