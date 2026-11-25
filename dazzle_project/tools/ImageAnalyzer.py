@@ -591,22 +591,136 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
     # ==================
 
     def iso11146_beam_width(image):
+        """
+        Compute laser beam position and diameter according to ISO 11146.
 
+        ISO 11146 defines beam width using the second moments
+        (variance) of the intensity distribution.
+
+        For a perfect Gaussian beam:
+
+            D4σ = 4 × σ
+
+        is equal to the classical 1/e² beam diameter.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            2D beam image.
+            Ideally background-subtracted before calling
+            this function.
+
+        Returns
+        -------
+        xc : float
+            Intensity-weighted beam centroid along X.
+
+        yc : float
+            Intensity-weighted beam centroid along Y.
+
+        diameter_x : float
+            ISO 11146 beam diameter along X (pixels).
+
+        diameter_y : float
+            ISO 11146 beam diameter along Y (pixels).
+
+        sigma_x : float
+            Standard deviation of intensity distribution along X.
+
+        sigma_y : float
+            Standard deviation of intensity distribution along Y.
+        """
+
+        # ----------------------------------------------------
+        # Create coordinate maps:
+        #
+        # x[y,x] contains the X pixel coordinate
+        # y[y,x] contains the Y pixel coordinate
+        #
+        # Example:
+        #
+        # x =
+        # [[0 1 2]
+        #  [0 1 2]]
+        #
+        # y =
+        # [[0 0 0]
+        #  [1 1 1]]
+        # ----------------------------------------------------
         y, x = np.indices(image.shape)
 
-        total = image.sum()
+        # ----------------------------------------------------
+        # Total optical power.
+        #
+        # Every pixel contributes proportionally to its intensity.
+        # ----------------------------------------------------
+        total_power = np.sum(image)
 
-        xc = (x * image).sum() / total
-        yc = (y * image).sum() / total
+        if total_power <= 0:
+            raise ValueError(
+                "Image contains no signal."
+            )
 
-        sigma_x = np.sqrt(
-            ((x - xc) ** 2 * image).sum() / total
+        # ----------------------------------------------------
+        # Calculate beam centroid.
+        #
+        # This is the intensity-weighted center of mass
+        # of the laser beam.
+        #
+        #              Σ(x * I)
+        # xc = -------------------------
+        #           Σ(I)
+        #
+        # Same for yc.
+        # ----------------------------------------------------
+        xc = np.sum(x * image) / total_power
+        yc = np.sum(y * image) / total_power
+
+        # ----------------------------------------------------
+        # Calculate second moments.
+        #
+        # These describe how far the beam energy spreads
+        # around the centroid.
+        #
+        #                    2
+        # Σ[(x - xc) * I]
+        # -----------------
+        #       Σ(I)
+        #
+        # Equivalent to an intensity-weighted variance.
+        # ----------------------------------------------------
+        sigma_x_squared = (
+                np.sum(((x - xc) ** 2) * image)
+                / total_power
         )
 
-        sigma_y = np.sqrt(
-            ((y - yc) ** 2 * image).sum() / total
+        sigma_y_squared = (
+                np.sum(((y - yc) ** 2) * image)
+                / total_power
         )
 
+        # ----------------------------------------------------
+        # Standard deviations:
+        #
+        # σ = sqrt(variance)
+        #
+        # Represents beam radius in terms of statistical spread.
+        # ----------------------------------------------------
+        sigma_x = np.sqrt(sigma_x_squared)
+        sigma_y = np.sqrt(sigma_y_squared)
+
+        # ----------------------------------------------------
+        # ISO 11146 D4σ diameter.
+        #
+        # For a perfect Gaussian:
+        #
+        # D4σ = 4σ
+        #
+        # and D4σ corresponds exactly to the 1/e² diameter.
+        #
+        # For non-Gaussian beams, D4σ remains well-defined,
+        # which is why ISO prefers this method.
+        # ----------------------------------------------------
         diameter_x = 4 * sigma_x
         diameter_y = 4 * sigma_y
 
@@ -614,7 +728,9 @@ class ImageAnalysisWidget(QtWidgets.QWidget):
             xc,
             yc,
             diameter_x,
-            diameter_y
+            diameter_y,
+            sigma_x,
+            sigma_y
         )
 
     def calculate_profiles(self):
