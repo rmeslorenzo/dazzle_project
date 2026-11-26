@@ -12,23 +12,23 @@ from dazzle_project.instruments.led_controller import LedController
 
 # input arguments
 
-exposure_time = 1300
-avg_samping = 25
 
 kwargs = {
-    "input_trigger"    : "XI_GPI_OFF",
-    "trigger_source"   : "XI_TRG_OFF", #"XI_TRG_EDGE_RISING"
-    # "trigger_selector" : "XI_GPO_FRAME_ACTIVE", #"XI_TRG_SEL_FRAME_START", "XI_TRG_SEL_EXPOSURE_ACTIVE"
-    "output_trigger"   : "XI_GPO_OFF", # "XI_GPO_FRAME_ACTIVE"
-    "roi_x"            : 544,
-    "roi_y"            : 360,
-    "x_width"          : 280,
-    "y_height"         : 160,
+    "collimator": "PAF2-A4A",
+    # "detector": "818-UV",
+    "ROI" : "ROI3",
+    "laser": "25118553-BNT100",
+    "base_folder": r"C:\Users\lab_a3\dazzle_folder", #r"C:\Users\lab_a3\dazzle_folder\dazzling",
+    "item_folder": "LIDT\\LIDT_POF",
+    "n_average": 10,
+    "exposure_time": 2100,
+    "filter": None,
 }
 
-LIDT_folder = r"C:\Users\lab_a3\dazzle_folder\LIDT\LIDT_POF"
-collimator  = "PAF2-A4A"
-folder_test = os.path.join(LIDT_folder, collimator, "reference_ROI2")
+LIDT_folder = os.path.join(kwargs["base_folder"], kwargs["item_folder"])
+collimator  = kwargs["collimator"]
+ROI = kwargs["ROI"]
+folder_test = os.path.join(LIDT_folder, collimator, f"reference_{ROI}")
 
 # if folder not exists create it
 folder_test_path = Path(folder_test)
@@ -50,6 +50,8 @@ print('Opening first camera...')
 camera.open_device()
 
 # settings
+exposure_time = kwargs["exposure_time"]
+n_average = int(kwargs["n_average"])
 camera.set_exposure(exposure_time)  # exposure is in us
 print('Exposure was set to %i us' % camera.get_exposure())
 temperature = camera.get_temp()
@@ -78,11 +80,11 @@ camera.start_acquisition()
 # capture illuminated frame
 sleep(0.1)
 ld_ctrl.enable_white()
-sleep(1)
+sleep(2)
 #get data and pass them from camera to img
 print("[Camera] : Capture bright reference frame")
 frames = []
-for i in range(avg_samping):
+for i in range(n_average):
     camera.get_image(img)
     np_data = img.get_image_data_numpy()
     frames.append(np_data)
@@ -98,7 +100,7 @@ ld_ctrl.output_off()
 sleep(1)
 print("[Camera] : Capture dark reference frame")
 frames = []
-for i in range(avg_samping):
+for i in range(n_average):
     camera.get_image(img)
     np_data = img.get_image_data_numpy()
     frames.append(np_data)
