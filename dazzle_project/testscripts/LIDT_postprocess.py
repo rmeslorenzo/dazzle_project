@@ -1,3 +1,17 @@
+# Date : 18/11/2026
+# Project : TENSIS ( Technology for EuropeaN independance in Space Image Sensors )
+# Author : Ricardo Mestre
+# ---------------------Description ------------------------------
+# Post-Process script to calculate pixel damage area from the captured images (Laser Induced Damage Threshold)
+# Procedure :
+# The image reference (light background before light exposure) and the image after laser exposure are loaded.
+# For certain current value driving the laser and a certain laser exposition duration.
+# Flat Field Correction is performed and the resulting array is normalized to detect the change in behavior among pixel
+# in the area affected by the laser.
+# Damaged pixels are defined by being above in the standard deviation between the exposed and reference image with a threshold
+#
+# -----------------------------------------------------------------------
+
 import os
 from pathlib import Path
 
@@ -151,16 +165,16 @@ def compute_damage_mask(after_laser_corrected,
     ratio = np.ones_like(reference_corrected, dtype=float)
 
     ratio[valid_pixels] = (
-        after_laser_corrected[valid_pixels]
+        (after_laser_corrected[valid_pixels] - reference_corrected[valid_pixels])
         / reference_corrected[valid_pixels]
     )
     # ratio = after_laser_corrected - reference_corrected
 
-    print(f"average normal : {np.mean( np.abs(ratio - 1.0))}")
-    print(f"min normal : {np.min(np.abs(ratio - 1.0))}")
-    print(f"max normal : {np.max(np.abs(ratio - 1.0))}")
+    print(f"average normal : {np.mean( np.abs(ratio[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]]))}")
+    print(f"min normal : {np.min(np.abs(ratio[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]]))}")
+    print(f"max normal : {np.max(np.abs(ratio[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]]))}")
 
-    damage_mask = np.abs(ratio - 1.0)  > threshold
+    damage_mask = np.abs(ratio)  > threshold
 
     damage_pixels = np.count_nonzero(damage_mask[roi["ymin"]:roi["ymax"], roi["xmin"]:roi["xmax"]] > threshold)
 
@@ -174,14 +188,16 @@ if __name__ == "__main__":
 
     correct_frames_to_do = False
     damage_mask_to_do = True
+    offset = [176, 640]
+    width  = [204, 142]
 
-    roi = dict(ymin=298, ymax=298+126, xmin=480, xmax=480+152)
+    roi = dict(ymin=offset[1], ymax=offset[1]+width[1], xmin=offset[0], xmax=offset[0]+width[0])
 
 
     lidt_path = r"C:\Users\lab_a3\dazzle_folder\LIDT\LIDT_POF"
     collimator = "PAF2-A4A"
-    ROI_folder = "ROI2"
-    laser_exposure_folder = "300_s"
+    ROI_folder = "ROI3"
+    laser_exposure_folder = "100_s"
     reference_path = os.path.join(lidt_path, collimator, f"reference_{ROI_folder}")
     illum_path     = os.path.join(lidt_path, collimator, ROI_folder, laser_exposure_folder)
 
@@ -217,7 +233,7 @@ if __name__ == "__main__":
         after_laser_array = np.load(after_laser_corrected)
         reference_array = np.load(reference_corrected)
 
-        damage_mask, ratio = compute_damage_mask(after_laser_corrected=after_laser_array, reference_corrected=reference_array, threshold=0.02, roi=roi)
+        damage_mask, ratio = compute_damage_mask(after_laser_corrected=after_laser_array, reference_corrected=reference_array, threshold=0.05, roi=roi)
 
         compare_arrays(after_laser_array, reference_array, ratio, damage_mask, title1="after_laser", title2="reference", title3="ratio", title4="damage_mask", roi=roi)
 
